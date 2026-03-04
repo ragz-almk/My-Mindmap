@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mindmap Maker Sederhana - V4 (Garis Bebas)</title>
+    <title>Mindmap Maker Sederhana - V5 (Magnetic Lines)</title>
     <style>
         body { margin: 0; padding: 0; font-family: sans-serif; background-color: #f1f2f6; overflow: hidden; }
         
@@ -20,10 +20,7 @@
             background-size: 40px 40px;
         }
 
-        /* Perubahan penting: pointer-events: none pada layer, agar kita bisa klik elemen SVG di dalamnya */
         #garis-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
-        
-        /* Agar titik pegangan garis bisa diklik/didrag */
         .handle { pointer-events: auto; cursor: grab; }
         .handle:active { cursor: grabbing; }
 
@@ -64,58 +61,43 @@
         const colorPicker = document.getElementById('colorPicker');
         
         const GRID_SIZE = 40; 
+        const MAGNET_RADIUS = 40; // Kekuatan tarikan magnet (dalam pixel)
         
-        // Struktur data baru: memisahkan kotak dan garis
         let appData = { nodes: [], lines: [] };
         
-        // Sistem Dragging yang lebih canggih
-        let dragInfo = null; // Menyimpan info apa yang sedang digeser (kotak atau ujung garis)
+        let dragInfo = null; 
         let dragOffsetX = 0;
         let dragOffsetY = 0;
         
         let selectedNodeId = null; 
         let selectedLineId = null; 
 
-        // --- 1. FUNGSI MEMUAT DATA ---
+        // --- 1. MEMUAT DATA ---
         function muatData() {
-            const dataTersimpan = localStorage.getItem('mindmapDataV4');
+            const dataTersimpan = localStorage.getItem('mindmapDataV5');
             if (dataTersimpan) {
                 appData = JSON.parse(dataTersimpan);
             } else {
-                // Konversi data V3 ke V4 jika ada, agar project lamamu tidak hilang
-                const dataLama = localStorage.getItem('mindmapDataV3');
-                if(dataLama) {
-                    const oldNodes = JSON.parse(dataLama);
-                    appData = { nodes: oldNodes, lines: [] };
-                    // Ubah koneksi lama menjadi garis manual
-                    oldNodes.forEach(node => {
-                        if(node.parentId) {
-                            const parent = oldNodes.find(n => n.id === node.parentId);
-                            if(parent) {
-                                appData.lines.push({
-                                    id: 'line-' + Date.now() + Math.random(),
-                                    x1: parent.x + 120, y1: parent.y + 20, 
-                                    x2: node.x, y2: node.y + 20
-                                });
-                            }
-                        }
-                    });
-                } else {
-                    appData = { 
-                        nodes: [{ id: 'node-1', text: 'Ide Utama', x: 120, y: 320, color: '#ffeaa7' }], 
-                        lines: [] 
-                    };
-                }
+                appData = { 
+                    nodes: [{ id: 'node-1', text: 'Ide Utama', x: 120, y: 320, color: '#ffeaa7' }], 
+                    lines: [] 
+                };
             }
             renderSemua();
         }
 
-        // --- 2. FUNGSI RENDER UTAMA ---
+        // --- 2. RENDER UTAMA ---
         function renderSemua() {
             canvas.querySelectorAll('.node').forEach(e => e.remove());
             garisLayer.innerHTML = '';
 
+            // TAMPILKAN KOTAK DULU (agar kita tahu ukurannya untuk magnet)
             appData.nodes.forEach(nodeData => buatElemenKotak(nodeData));
+            
+            // UPDATE POSISI GARIS YANG TERTEMPEL MAGNET
+            updatePosisiGarisMagnet();
+
+            // TAMPILKAN GARIS
             appData.lines.forEach(lineData => gambarGarisBebas(lineData));
         }
 
@@ -132,7 +114,11 @@
             div.innerText = data.text;
             div.contentEditable = true;
 
-            div.addEventListener('blur', (e) => { data.text = e.target.innerText; simpanDataOtomatis(); });
+            div.addEventListener('blur', (e) => { 
+                data.text = e.target.innerText; 
+                simpanDataOtomatis(); 
+                renderSemua(); // Render ulang jika ukuran kotak berubah karena teks panjang
+            });
 
             div.addEventListener('mousedown', (e) => {
                 pilihElemen('node', data.id, data.color);
@@ -144,36 +130,88 @@
             canvas.appendChild(div);
         }
 
-        // --- 4. MENGGAMBAR GARIS BEBAS ---
+        // --- 4. SISTEM MAGNET (Baru!) ---
+        // Fungsi ini membuat ujung garis selalu mengikuti kotak induknya
+        function updatePosisiGarisMagnet() {
+            appData.lines.forEach(line => {
+                if(line.startNode) {
+                    const node = appData.nodes.find(n => n.id === line.startNode);
+                    const el = document.getElementById(line.startNode);
+                    if(node && el) {
+                        line.y1 = node.y + (el.offsetHeight / 2); // Ke tengah vertikal kotak
+                        line.x1 = line.startSide === 'left' ? node.x : node.x + el.offsetWidth;
+                    }
+                }
+                if(line.endNode) {
+                    const node = appData.nodes.find(n => n.id === line.endNode);
+                    const el = document.getElementById(line.endNode);
+                    if(node && el) {
+                        line.y2 = node.y + (el.offsetHeight / 2);
+                        line.x2 = line.endSide === 'left' ? node.x : node.x + el.offsetWidth;
+                    }
+                }
+            });
+        }
+
+        // Fungsi ini mengecek apakah ujung garis dekat dengan sisi kotak saat dilepas
+        function cekMagnetLokasi(x, y) {
+            let targetNode = null;
+            let targetSide = null;
+            let minDistance = MAGNET_RADIUS;
+
+            appData.nodes.forEach(node => {
+                const el = document.getElementById(node.id);
+                if(!el) return;
+                
+                // Titik port sisi Kiri
+                const leftX = node.x;
+                const leftY = node.y + (el.offsetHeight / 2);
+                const distLeft = Math.hypot(x - leftX, y - leftY); // Menghitung jarak lurus
+
+                if(distLeft < minDistance) { minDistance = distLeft; targetNode = node.id; targetSide = 'left'; }
+
+                // Titik port sisi Kanan
+                const rightX = node.x + el.offsetWidth;
+                const rightY = node.y + (el.offsetHeight / 2);
+                const distRight = Math.hypot(x - rightX, y - rightY);
+
+                if(distRight < minDistance) { minDistance = distRight; targetNode = node.id; targetSide = 'right'; }
+            });
+
+            return { targetNode, targetSide };
+        }
+
+        // --- 5. MENGGAMBAR GARIS ---
         function gambarGarisBebas(garis) {
             const midX = (garis.x1 + garis.x2) / 2;
             const pathD = `M ${garis.x1} ${garis.y1} C ${midX} ${garis.y1}, ${midX} ${garis.y2}, ${garis.x2} ${garis.y2}`;
 
-            // Gambar jalurnya
             const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
             path.setAttribute('d', pathD);
-            // Garis akan berubah biru jika dipilih
             path.setAttribute('stroke', garis.id === selectedLineId ? '#0984e3' : '#a4b0be');
             path.setAttribute('stroke-width', garis.id === selectedLineId ? '5' : '3'); 
             path.setAttribute('fill', 'none');
             garisLayer.appendChild(path);
 
-            // Gambar pegangan (handle) titik Awal
-            buatHandle(garis.x1, garis.y1, '#2ecc71', garis.id, 'start'); // Hijau untuk awal
-            // Gambar pegangan (handle) titik Akhir
-            buatHandle(garis.x2, garis.y2, '#e74c3c', garis.id, 'end');   // Merah untuk akhir
+            // Bulatan handle akan hilang jika sudah terhubung ke magnet agar rapi
+            if(!garis.startNode) buatHandle(garis.x1, garis.y1, '#2ecc71', garis.id, 'start'); 
+            if(!garis.endNode) buatHandle(garis.x2, garis.y2, '#e74c3c', garis.id, 'end');   
+            
+            // Tambahkan "zona klik" tak kasat mata di ujung garis magnet untuk mencabutnya
+            if(garis.startNode) buatHandle(garis.x1, garis.y1, 'transparent', garis.id, 'start');
+            if(garis.endNode) buatHandle(garis.x2, garis.y2, 'transparent', garis.id, 'end');
         }
 
         function buatHandle(x, y, warna, idGaris, pointType) {
             const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
             circle.setAttribute('cx', x);
             circle.setAttribute('cy', y);
-            circle.setAttribute('r', '8'); // Ukuran bulatan
+            circle.setAttribute('r', '8');
             circle.setAttribute('fill', warna);
             circle.setAttribute('class', 'handle');
             
             circle.addEventListener('mousedown', (e) => {
-                e.stopPropagation(); // Agar tidak men-trigger klik kanvas
+                e.stopPropagation(); 
                 pilihElemen('line', idGaris, null);
                 dragInfo = { type: pointType, id: idGaris };
             });
@@ -181,23 +219,17 @@
             garisLayer.appendChild(circle);
         }
 
-        // --- 5. LOGIKA MEMILIH & DRAGGING ---
+        // --- 6. LOGIKA MENGGESER ---
         function pilihElemen(tipe, id, color) {
-            if (tipe === 'node') {
-                selectedNodeId = id; selectedLineId = null;
-                if (color) colorPicker.value = color; 
-            } else if (tipe === 'line') {
-                selectedLineId = id; selectedNodeId = null;
-            }
+            if (tipe === 'node') { selectedNodeId = id; selectedLineId = null; if (color) colorPicker.value = color; } 
+            else if (tipe === 'line') { selectedLineId = id; selectedNodeId = null; }
             renderSemua(); 
         }
 
         function onMove(clientX, clientY) {
             if (!dragInfo) return;
             
-            // Mengubah posisi kursor menjadi posisi di kanvas & menjadikannya menempel ke grid (Snap)
-            const rawX = clientX;
-            const rawY = clientY;
+            const rawX = clientX; const rawY = clientY;
             const snappedX = Math.round(rawX / GRID_SIZE) * GRID_SIZE;
             const snappedY = Math.round(rawY / GRID_SIZE) * GRID_SIZE;
 
@@ -210,23 +242,50 @@
             } 
             else if (dragInfo.type === 'start') {
                 const line = appData.lines.find(l => l.id === dragInfo.id);
-                if (line) { line.x1 = snappedX; line.y1 = snappedY; }
+                if (line) { 
+                    line.startNode = null; line.startSide = null; // Putuskan magnet jika ditarik
+                    line.x1 = snappedX; line.y1 = snappedY; 
+                }
             } 
             else if (dragInfo.type === 'end') {
                 const line = appData.lines.find(l => l.id === dragInfo.id);
-                if (line) { line.x2 = snappedX; line.y2 = snappedY; }
+                if (line) { 
+                    line.endNode = null; line.endSide = null; // Putuskan magnet jika ditarik
+                    line.x2 = snappedX; line.y2 = snappedY; 
+                }
             }
             
             renderSemua();
         }
 
         window.addEventListener('mousemove', (e) => onMove(e.clientX, e.clientY));
+        
+        // --- EVENT KETIKA MOUSE DILEPASKAN (Proses Menempelkan Magnet) ---
         window.addEventListener('mouseup', () => { 
+            if (dragInfo && (dragInfo.type === 'start' || dragInfo.type === 'end')) {
+                const line = appData.lines.find(l => l.id === dragInfo.id);
+                if (line) {
+                    const x = dragInfo.type === 'start' ? line.x1 : line.x2;
+                    const y = dragInfo.type === 'start' ? line.y1 : line.y2;
+                    
+                    // Cek apakah dekat dengan sisi kotak
+                    const magnet = cekMagnetLokasi(x, y);
+
+                    if (dragInfo.type === 'start' && magnet.targetNode) {
+                        line.startNode = magnet.targetNode;
+                        line.startSide = magnet.targetSide;
+                    } else if (dragInfo.type === 'end' && magnet.targetNode) {
+                        line.endNode = magnet.targetNode;
+                        line.endSide = magnet.targetSide;
+                    }
+                }
+            }
+
             if(dragInfo) simpanDataOtomatis();
             dragInfo = null; 
+            renderSemua(); // Menggambar ulang agar garis menempel pas
         });
 
-        // Klik kekosongan kanvas
         canvas.addEventListener('mousedown', (e) => {
             if (e.target === canvas || e.target === garisLayer) {
                 selectedNodeId = null; selectedLineId = null;
@@ -234,7 +293,7 @@
             }
         });
 
-        // --- 6. MENU & TOMBOL KONTROL ---
+        // --- 7. MENU ---
         function tambahKotak() {
             appData.nodes.push({
                 id: 'node-' + Date.now(), text: 'Kotak Baru',
@@ -247,8 +306,8 @@
         function tambahGarisManual() {
             appData.lines.push({
                 id: 'line-' + Date.now(),
-                x1: 200, y1: 200, // Koordinat awal
-                x2: 400, y2: 200  // Koordinat akhir
+                x1: 200, y1: 200, x2: 400, y2: 200,
+                startNode: null, startSide: null, endNode: null, endSide: null
             });
             simpanDataOtomatis(); renderSemua();
         }
@@ -263,54 +322,41 @@
         function hapusTerpilih() {
             if (selectedNodeId) {
                 appData.nodes = appData.nodes.filter(n => n.id !== selectedNodeId);
+                appData.lines = appData.lines.filter(l => l.startNode !== selectedNodeId && l.endNode !== selectedNodeId); // Hapus garis yang tertempel
                 selectedNodeId = null;
             } else if (selectedLineId) {
                 appData.lines = appData.lines.filter(l => l.id !== selectedLineId);
                 selectedLineId = null;
-            } else {
-                alert("Klik kotak atau titik ujung garis terlebih dahulu sebelum menghapus.");
-                return;
-            }
+            } else { return alert("Klik kotak atau garis terlebih dahulu sebelum menghapus."); }
             simpanDataOtomatis(); renderSemua();
         }
 
-        function simpanDataOtomatis() {
-            localStorage.setItem('mindmapDataV4', JSON.stringify(appData));
-        }
+        function simpanDataOtomatis() { localStorage.setItem('mindmapDataV5', JSON.stringify(appData)); }
 
         function hapusSemuaData() {
-            if(confirm('Hapus semua dan mulai dari awal?')) {
-                localStorage.removeItem('mindmapDataV4'); localStorage.removeItem('mindmapDataV3');
-                appData = { nodes: [], lines: [] }; selectedNodeId = null; selectedLineId = null;
-                muatData();
+            if(confirm('Hapus semua?')) {
+                localStorage.clear(); appData = { nodes: [], lines: [] }; selectedNodeId = null; selectedLineId = null; muatData();
             }
         }
 
-        // --- 7. FUNGSI EKSPOR/IMPOR FILE ---
+        // --- EKSPOR/IMPOR ---
         function eksporKeFile() {
             const dataString = JSON.stringify(appData, null, 2); 
             const blob = new Blob([dataString], { type: "application/json" });
             const url = URL.createObjectURL(blob);
-            
-            const a = document.createElement('a');
-            a.href = url; a.download = "mindmap_bebas.json"; 
-            document.body.appendChild(a); a.click(); document.body.removeChild(a); 
-            URL.revokeObjectURL(url);
+            const a = document.createElement('a'); a.href = url; a.download = "mindmap_magnet.json"; 
+            document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
         }
 
         function imporDariFile(event) {
             const file = event.target.files[0];
             if (!file) return; 
-
             const reader = new FileReader(); 
             reader.onload = function(e) {
                 try {
                     const dataBaru = JSON.parse(e.target.result);
-                    // Pastikan formatnya sesuai yang baru (memiliki nodes dan lines)
-                    if (dataBaru && Array.isArray(dataBaru.nodes)) {
-                        appData = dataBaru; simpanDataOtomatis(); renderSemua(); alert("Data berhasil dimuat!");
-                    } else { alert("Format file tidak valid!"); }
-                } catch (error) { alert("Terjadi kesalahan saat membaca file JSON."); }
+                    if (dataBaru && Array.isArray(dataBaru.nodes)) { appData = dataBaru; simpanDataOtomatis(); renderSemua(); } 
+                } catch (error) { alert("Error membaca file."); }
             };
             reader.readAsText(file); event.target.value = ''; 
         }
