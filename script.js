@@ -1,8 +1,22 @@
 // script.js
 const GRID_SIZE = 20;
-const NODE_WIDTH = 120;
 const NODE_HEIGHT = 60;
 const COLORS = ['#334155', '#2563eb', '#dc2626', '#16a34a', '#ca8a04', '#9333ea'];
+
+// Fungsi untuk menghitung lebar kotak agar pas dengan teks dan grid
+const calculateNodeWidth = (text) => {
+    const minWidth = 120; // Lebar minimal (6 kotak grid)
+    const approxCharWidth = 9; // Perkiraan lebar 1 huruf dalam pixel
+    const padding = 40; // Ruang kosong kiri dan kanan teks
+    
+    // Hitung panjang kasar
+    const rawWidth = (text.length * approxCharWidth) + padding;
+    
+    // Bulatkan ke kelipatan GRID_SIZE (20) terdekat agar tetap menempel di grid
+    const snappedWidth = Math.ceil(rawWidth / GRID_SIZE) * GRID_SIZE;
+    
+    return Math.max(minWidth, snappedWidth);
+};
 
 // --- STATE MANAGEMENT ---
 let state = {
@@ -58,11 +72,17 @@ const commit = (newNodes, newEdges) => {
 
 const getOrthogonalPath = (source, target) => {
     if (!source || !target) return '';
-    const startX = source.x + NODE_WIDTH / 2;
+    
+    // Hitung lebar dinamis untuk masing-masing kotak
+    const sourceWidth = calculateNodeWidth(source.text);
+    const targetWidth = calculateNodeWidth(target.text);
+
+    const startX = source.x + sourceWidth / 2;
     const startY = source.y + NODE_HEIGHT / 2;
-    const endX = target.x + NODE_WIDTH / 2;
+    const endX = target.x + targetWidth / 2;
     const endY = target.y + NODE_HEIGHT / 2;
     const midX = snapToGrid((startX + endX) / 2);
+    
     return `M ${startX} ${startY} L ${midX} ${startY} L ${midX} ${endY} L ${endX} ${endY}`;
 };
 
@@ -94,6 +114,18 @@ function render() {
         div.style.transform = `translate(${node.x}px, ${node.y}px)`;
         div.style.backgroundColor = node.color;
         
+        // Render Nodes
+    nodesLayer.innerHTML = '';
+    state.nodes.forEach(node => {
+        const div = document.createElement('div');
+        const nodeWidth = calculateNodeWidth(node.text); // Ambil lebar dinamis
+        
+        div.className = `node ${state.selectedNodeId === node.id ? 'selected' : ''} ${state.connectSourceId === node.id ? 'connecting' : ''}`;
+        div.style.width = `${nodeWidth}px`; // Gunakan lebar dinamis
+        div.style.height = `${NODE_HEIGHT}px`;
+        div.style.transform = `translate(${node.x}px, ${node.y}px)`;
+        div.style.backgroundColor = node.color;
+        
         // Node Content
         if (state.selectedNodeId === node.id && state.activeTool === 'select') {
             const input = document.createElement('input');
@@ -101,8 +133,25 @@ function render() {
             input.className = 'node-input';
             input.value = node.text;
             input.onpointerdown = e => e.stopPropagation();
-            input.oninput = e => { node.text = e.target.value; }; // Direct update, no commit
-            input.onblur = () => commit(state.nodes, state.edges);
+            
+            input.oninput = e => { 
+                node.text = e.target.value; 
+                // Lebarkan kotak secara real-time saat ngetik
+                div.style.width = `${calculateNodeWidth(e.target.value)}px`;
+            }; 
+            
+            // FITUR BARU: Tekan Enter untuk simpan
+            input.onkeydown = e => {
+                if (e.key === 'Enter') {
+                    input.blur(); // Ini akan memicu onblur di bawah
+                }
+            };
+            
+            input.onblur = () => {
+                commit(state.nodes, state.edges);
+                render(); // Gambar ulang agar posisi garis ikut bergeser
+            };
+            
             div.appendChild(input);
             setTimeout(() => input.focus(), 10);
         } else {
@@ -160,7 +209,13 @@ function handleNodePointerDown(e, node) {
 }
 
 container.addEventListener('pointerdown', (e) => {
+    // FITUR BARU: Paksa simpan teks jika sedang mengetik dan layar disentuh
+    if (document.activeElement && document.activeElement.tagName === 'INPUT') {
+        document.activeElement.blur();
+    }
+
     if (e.target.closest('.toolbar') || e.target.closest('#node-toolbar') || e.target.closest('.node')) return;
+    
     isDraggingViewport = true;
     dragStart = { x: e.clientX, y: e.clientY, panX: state.pan.x, panY: state.pan.y };
     state.selectedNodeId = null;
@@ -243,11 +298,15 @@ container.addEventListener('touchend', () => { initialPinchDist = null; });
 document.getElementById('btn-add').onclick = () => {
     const viewportCenterX = -state.pan.x / state.zoom + window.innerWidth / (2 * state.zoom);
     const viewportCenterY = -state.pan.y / state.zoom + window.innerHeight / (2 * state.zoom);
+    
+    const defaultText = 'Kotak Baru';
+    const startWidth = calculateNodeWidth(defaultText); // Hitung lebar awal
+    
     const newNode = {
         id: Date.now().toString(),
-        x: snapToGrid(viewportCenterX - NODE_WIDTH / 2),
+        x: snapToGrid(viewportCenterX - startWidth / 2),
         y: snapToGrid(viewportCenterY - NODE_HEIGHT / 2),
-        text: 'Kotak Baru',
+        text: defaultText,
         color: COLORS[0]
     };
     commit([...state.nodes, newNode], state.edges);
