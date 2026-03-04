@@ -8,10 +8,42 @@ let state = {
     edges: [],
     zoom: 1,
     pan: { x: 0, y: 0 },
-    activeTool: 'select', // 'select' | 'connect'
-    selectedNodeId: null,
+    activeTool: 'select', 
+    selectedNodeIds: [], // <-- BERUBAH: Sekarang menggunakan array untuk multi-select
     connectSourceId: null
 };
+
+let history = [];
+let future = [];
+
+// Interaction Refs
+let isDraggingViewport = false;
+let isDraggingNode = false;
+let isSelecting = false; // Deteksi apakah sedang membuat kotak seleksi
+let dragStart = { x: 0, y: 0, panX: 0, panY: 0, startX: 0, startY: 0 };
+let selectStart = { x: 0, y: 0 };
+let dragOffsets = []; // Menyimpan posisi awal banyak kotak saat digeser
+let initialPinchDist = null;
+
+// DOM Elements
+const container = document.getElementById('app-container');
+const canvasLayer = document.getElementById('canvas-layer');
+const bgGrid = document.getElementById('bg-grid');
+const edgesLayer = document.getElementById('edges-layer');
+const nodesLayer = document.getElementById('nodes-layer');
+const connectMessage = document.getElementById('connect-message');
+const nodeToolbar = document.getElementById('node-toolbar');
+
+// --- FITUR BARU: Elemen Visual Kotak Seleksi ---
+const selectionBoxEl = document.createElement('div');
+selectionBoxEl.style.cssText = 'position: absolute; border: 1px solid #3b82f6; background-color: rgba(59, 130, 246, 0.2); pointer-events: none; display: none; z-index: 100;';
+document.body.appendChild(selectionBoxEl);
+
+// Mencegah menu klik kanan muncul agar tidak mengganggu
+container.addEventListener('contextmenu', e => e.preventDefault());
+
+// Initialize Icons
+lucide.createIcons();
 
 let history = [];
 let future = [];
@@ -117,23 +149,23 @@ function render() {
     // Render Nodes
     nodesLayer.innerHTML = '';
     state.nodes.forEach(node => {
-        const size = getNodeSize(node.text); // <--- Memanggil fungsi pengukur ukuran
+        const size = getNodeSize(node.text);
+        
+        // Cek apakah node ini termasuk yang sedang dipilih
+        const isSelected = state.selectedNodeIds.includes(node.id);
 
         const div = document.createElement('div');
-        div.className = `node ${state.selectedNodeId === node.id ? 'selected' : ''} ${state.connectSourceId === node.id ? 'connecting' : ''}`;
-        
-        // --- PERBAIKAN BUG: Gunakan size.width dan size.height ---
+        div.className = `node ${isSelected ? 'selected' : ''} ${state.connectSourceId === node.id ? 'connecting' : ''}`;
         div.style.width = `${size.width}px`;
         div.style.height = `${size.height}px`;
         div.style.transform = `translate(${node.x}px, ${node.y}px)`;
         div.style.backgroundColor = node.color;
         
-        // Node Content
-        if (state.selectedNodeId === node.id && state.activeTool === 'select') {
-            const input = document.createElement('textarea'); // <--- Gunakan textarea agar bisa multiple lines
+        // Node Content (Hanya bisa edit text jika yang dipilih HANYA 1 kotak)
+        if (isSelected && state.selectedNodeIds.length === 1 && state.activeTool === 'select') {
+            const input = document.createElement('textarea'); 
             input.className = 'node-input';
             
-            // Styling bawaan JS agar transparan dan membaur
             input.style.width = '100%';
             input.style.height = '100%';
             input.style.resize = 'none';
@@ -147,14 +179,12 @@ function render() {
             input.value = node.text;
             input.onpointerdown = e => e.stopPropagation();
             
-            // Auto resize & update garis saat mengetik
             input.oninput = e => { 
                 node.text = e.target.value; 
                 const newSize = getNodeSize(node.text);
                 div.style.width = `${newSize.width}px`;
                 div.style.height = `${newSize.height}px`;
                 
-                // Update garis secara real-time
                 edgesLayer.innerHTML = state.edges.map(edge => {
                     const source = state.nodes.find(n => n.id === edge.source);
                     const target = state.nodes.find(n => n.id === edge.target);
@@ -162,7 +192,6 @@ function render() {
                 }).join('');
             }; 
             
-            // Enter = Simpan, Shift + Enter = Baris Baru
             input.onkeydown = e => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -182,7 +211,7 @@ function render() {
             span.style.whiteSpace = 'pre-wrap';
             span.style.wordBreak = 'break-word';
             span.style.display = '-webkit-box';
-            span.style.webkitLineClamp = '7'; // Maksimal visual 7 baris
+            span.style.webkitLineClamp = '7'; 
             span.style.webkitBoxOrient = 'vertical';
             span.style.overflow = 'hidden';
             span.innerText = node.text;
@@ -201,6 +230,10 @@ function render() {
     connectMessage.classList.toggle('hidden', state.activeTool !== 'connect');
     if (state.activeTool === 'connect') {
         connectMessage.innerText = state.connectSourceId ? 'Tap kotak kedua untuk menyambung' : 'Tap kotak pertama';
+    }
+
+    // Tampilkan toolbar hanya jika ada kotak yang dipilih
+    nodeToolbar.classList.toggle('hidden', !(state.selectedNodeIds.length > 0 && state.activeTool === 'select'));
     }
 
     nodeToolbar.classList.toggle('hidden', !(state.selectedNodeId && state.activeTool === 'select'));
@@ -228,19 +261,47 @@ function handleNodePointerDown(e, node) {
             state.connectSourceId = null;
         }
     } else {
-        state.selectedNodeId = node.id;
-        const coords = getCanvasCoords(e.clientX, e.clientY);
-        isDraggingNode = true;
-        dragStart = { offsetX: coords.x - node.x, offsetY: coords.y - node.y, nodeX: node.x, nodeY: node.y };
+        if (e.button === 0) { // Klik kiri
+            // Jika kotak yang diklik belum termasuk dalam seleksi, jadikan kotak ini seleksi utama
+            if (!state.selectedNodeIds.includes(node.id)) {
+                state.selectedNodeIds = [node.id];
+            }
+            
+            const coords = getCanvasCoords(e.clientX, e.clientY);
+            isDraggingNode = true;
+            dragStart = { startX: coords.x, startY: coords.y };
+            
+            // Simpan posisi mula-mula dari SEMUA kotak yang terseleksi
+            dragOffsets = state.selectedNodeIds.map(id => {
+                const n = state.nodes.find(n => n.id === id);
+                return { id: id, nodeStartX: n.x, nodeStartY: n.y };
+            });
+        }
     }
     render();
 }
 
 container.addEventListener('pointerdown', (e) => {
     if (e.target.closest('.toolbar') || e.target.closest('#node-toolbar') || e.target.closest('.node')) return;
-    isDraggingViewport = true;
-    dragStart = { x: e.clientX, y: e.clientY, panX: state.pan.x, panY: state.pan.y };
-    state.selectedNodeId = null;
+    
+    if (e.button === 1) { 
+        // KLIK TENGAH (Scroll Wheel): Untuk Pan Layar
+        e.preventDefault();
+        isDraggingViewport = true;
+        dragStart = { x: e.clientX, y: e.clientY, panX: state.pan.x, panY: state.pan.y };
+    } else if (e.button === 0 && state.activeTool === 'select') { 
+        // KLIK KIRI (Tahan): Untuk Drag Select (Marquee)
+        isSelecting = true;
+        selectStart = { x: e.clientX, y: e.clientY };
+        selectionBoxEl.style.display = 'block';
+        selectionBoxEl.style.left = e.clientX + 'px';
+        selectionBoxEl.style.top = e.clientY + 'px';
+        selectionBoxEl.style.width = '0px';
+        selectionBoxEl.style.height = '0px';
+        
+        state.selectedNodeIds = []; // Reset seleksi saat klik background
+    }
+    
     state.connectSourceId = null;
     render();
 });
@@ -250,29 +311,86 @@ container.addEventListener('pointermove', (e) => {
         state.pan.x = dragStart.panX + (e.clientX - dragStart.x);
         state.pan.y = dragStart.panY + (e.clientY - dragStart.y);
         render();
-    } else if (isDraggingNode && state.selectedNodeId && state.activeTool === 'select') {
+    } else if (isSelecting) {
+        // Logika menggambar kotak seleksi biru
+        const currentX = e.clientX;
+        const currentY = e.clientY;
+        const left = Math.min(selectStart.x, currentX);
+        const top = Math.min(selectStart.y, currentY);
+        const width = Math.abs(currentX - selectStart.x);
+        const height = Math.abs(currentY - selectStart.y);
+        
+        selectionBoxEl.style.left = left + 'px';
+        selectionBoxEl.style.top = top + 'px';
+        selectionBoxEl.style.width = width + 'px';
+        selectionBoxEl.style.height = height + 'px';
+
+        // Hitung kotak mana saja yang tersentuh area seleksi
+        const startCanvas = getCanvasCoords(left, top);
+        const endCanvas = getCanvasCoords(left + width, top + height);
+
+        state.selectedNodeIds = state.nodes.filter(node => {
+            const size = getNodeSize(node.text);
+            return (
+                node.x + size.width > startCanvas.x &&
+                node.x < endCanvas.x &&
+                node.y + size.height > startCanvas.y &&
+                node.y < endCanvas.y
+            );
+        }).map(n => n.id);
+
+        render();
+    } else if (isDraggingNode && state.activeTool === 'select') {
+        // Menggeser semua kotak yang terseleksi
         const coords = getCanvasCoords(e.clientX, e.clientY);
-        const newX = snapToGrid(coords.x - dragStart.offsetX);
-        const newY = snapToGrid(coords.y - dragStart.offsetY);
-        const node = state.nodes.find(n => n.id === state.selectedNodeId);
-        if (node) { node.x = newX; node.y = newY; render(); }
+        const deltaX = snapToGrid(coords.x - dragStart.startX);
+        const deltaY = snapToGrid(coords.y - dragStart.startY);
+
+        dragOffsets.forEach(item => {
+            const node = state.nodes.find(n => n.id === item.id);
+            if (node) {
+                node.x = item.nodeStartX + deltaX;
+                node.y = item.nodeStartY + deltaY;
+            }
+        });
+        render();
     }
 });
 
 const endDrag = () => {
     if (isDraggingNode) {
-        const node = state.nodes.find(n => n.id === state.selectedNodeId);
-        if (node && (node.x !== dragStart.nodeX || node.y !== dragStart.nodeY)) {
-            // Restore position to save history, then apply new
-            const finalX = node.x; const finalY = node.y;
-            node.x = dragStart.nodeX; node.y = dragStart.nodeY;
+        // Cek apakah posisi benar-benar berubah untuk disimpan di history
+        const changed = dragOffsets.some(item => {
+            const node = state.nodes.find(n => n.id === item.id);
+            return node && (node.x !== item.nodeStartX || node.y !== item.nodeStartY);
+        });
+
+        if (changed) {
+            const currentPositions = dragOffsets.map(item => {
+                const node = state.nodes.find(n => n.id === item.id);
+                return { id: item.id, x: node.x, y: node.y };
+            });
+
+            // Kembalikan sementara ke awal, commit, lalu taruh di posisi baru
+            dragOffsets.forEach(item => {
+                const node = state.nodes.find(n => n.id === item.id);
+                if (node) { node.x = item.nodeStartX; node.y = item.nodeStartY; }
+            });
             commit(state.nodes, state.edges);
-            node.x = finalX; node.y = finalY;
+
+            currentPositions.forEach(pos => {
+                const node = state.nodes.find(n => n.id === pos.id);
+                if (node) { node.x = pos.x; node.y = pos.y; }
+            });
             render();
         }
     }
+
+    if (isSelecting) selectionBoxEl.style.display = 'none';
+
     isDraggingViewport = false;
     isDraggingNode = false;
+    isSelecting = false;
 };
 
 container.addEventListener('pointerup', endDrag);
@@ -359,20 +477,20 @@ document.getElementById('btn-add').onclick = () => {
         color: COLORS[0]
     };
     commit([...state.nodes, newNode], state.edges);
-    state.selectedNodeId = newNode.id;
+    state.selectedNodeIds = [newNode.id];
     state.activeTool = 'select';
     render();
 };
 
 document.getElementById('btn-select').onclick = () => { state.activeTool = 'select'; render(); };
-document.getElementById('btn-connect').onclick = () => { state.activeTool = 'connect'; state.selectedNodeId = null; state.connectSourceId = null; render(); };
+document.getElementById('btn-connect').onclick = () => { state.activeTool = 'connect'; state.selectedNodeIds = []; state.connectSourceId = null; render(); };
 
 document.getElementById('btn-undo').onclick = () => {
     if (history.length === 0) return;
     const prev = history.pop();
     future.push({ nodes: JSON.parse(JSON.stringify(state.nodes)), edges: JSON.parse(JSON.stringify(state.edges)) });
     state.nodes = prev.nodes; state.edges = prev.edges;
-    state.selectedNodeId = null;
+    state.selectedNodeIds = [];
     render();
 };
 
@@ -381,7 +499,7 @@ document.getElementById('btn-redo').onclick = () => {
     const nxt = future.pop();
     history.push({ nodes: JSON.parse(JSON.stringify(state.nodes)), edges: JSON.parse(JSON.stringify(state.edges)) });
     state.nodes = nxt.nodes; state.edges = nxt.edges;
-    state.selectedNodeId = null;
+    state.selectedNodeIds = [];
     render();
 };
 
@@ -389,24 +507,25 @@ document.getElementById('btn-zoom-in').onclick = () => { state.zoom = Math.min(2
 document.getElementById('btn-zoom-out').onclick = () => { state.zoom = Math.max(0.3, state.zoom - 0.2); render(); };
 
 document.getElementById('btn-delete').onclick = () => {
-    if (!state.selectedNodeId) return;
+    if (state.selectedNodeIds.length === 0) return;
     commit(
-        state.nodes.filter(n => n.id !== state.selectedNodeId),
-        state.edges.filter(e => e.source !== state.selectedNodeId && e.target !== state.selectedNodeId)
+        state.nodes.filter(n => !state.selectedNodeIds.includes(n.id)),
+        state.edges.filter(e => !state.selectedNodeIds.includes(e.source) && !state.selectedNodeIds.includes(e.target))
     );
-    state.selectedNodeId = null;
+    state.selectedNodeIds = [];
     render();
 };
 
 // Setup Color Picker
 const colorContainer = document.getElementById('color-picker');
+colorContainer.innerHTML = ''; // Pastikan div bersih sebelum merender warna
 COLORS.forEach(color => {
     const btn = document.createElement('button');
     btn.className = 'w-6 h-6 rounded-full border-2 border-transparent hover:border-white transition-all focus:outline-none';
     btn.style.backgroundColor = color;
     btn.onclick = () => {
-        if (!state.selectedNodeId) return;
-        const newNodes = state.nodes.map(n => n.id === state.selectedNodeId ? { ...n, color } : n);
+        if (state.selectedNodeIds.length === 0) return;
+        const newNodes = state.nodes.map(n => state.selectedNodeIds.includes(n.id) ? { ...n, color } : n);
         commit(newNodes, state.edges);
     };
     colorContainer.appendChild(btn);
