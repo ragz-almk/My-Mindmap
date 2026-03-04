@@ -117,43 +117,79 @@ function render() {
     // Render Nodes
     nodesLayer.innerHTML = '';
     state.nodes.forEach(node => {
+        const size = getNodeSize(node.text); // <--- Memanggil fungsi pengukur ukuran
+
         const div = document.createElement('div');
         div.className = `node ${state.selectedNodeId === node.id ? 'selected' : ''} ${state.connectSourceId === node.id ? 'connecting' : ''}`;
-        div.style.width = `${NODE_WIDTH}px`;
-        div.style.height = `${NODE_HEIGHT}px`;
+        
+        // --- PERBAIKAN BUG: Gunakan size.width dan size.height ---
+        div.style.width = `${size.width}px`;
+        div.style.height = `${size.height}px`;
         div.style.transform = `translate(${node.x}px, ${node.y}px)`;
         div.style.backgroundColor = node.color;
         
-       // Node Content
+        // Node Content
         if (state.selectedNodeId === node.id && state.activeTool === 'select') {
-            const input = document.createElement('input');
-            input.type = 'text';
+            const input = document.createElement('textarea'); // <--- Gunakan textarea agar bisa multiple lines
             input.className = 'node-input';
+            
+            // Styling bawaan JS agar transparan dan membaur
+            input.style.width = '100%';
+            input.style.height = '100%';
+            input.style.resize = 'none';
+            input.style.background = 'transparent';
+            input.style.border = 'none';
+            input.style.color = 'white';
+            input.style.textAlign = 'center';
+            input.style.outline = 'none';
+            input.style.overflow = 'hidden';
+            
             input.value = node.text;
             input.onpointerdown = e => e.stopPropagation();
             
-            // Mengupdate state secara langsung saat mengetik
-            input.oninput = e => { node.text = e.target.value; }; 
+            // Auto resize & update garis saat mengetik
+            input.oninput = e => { 
+                node.text = e.target.value; 
+                const newSize = getNodeSize(node.text);
+                div.style.width = `${newSize.width}px`;
+                div.style.height = `${newSize.height}px`;
+                
+                // Update garis secara real-time
+                edgesLayer.innerHTML = state.edges.map(edge => {
+                    const source = state.nodes.find(n => n.id === edge.source);
+                    const target = state.nodes.find(n => n.id === edge.target);
+                    return `<path d="${getOrthogonalPath(source, target)}" fill="none" stroke="${source?.color || '#475569'}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" class="opacity-60"></path>`;
+                }).join('');
+            }; 
             
-            // --- FITUR BARU: Deteksi tombol Enter ---
+            // Enter = Simpan, Shift + Enter = Baris Baru
             input.onkeydown = e => {
-                if (e.key === 'Enter') {
-                    input.blur(); // Memicu onblur untuk menyimpan (commit)
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    input.blur(); 
                 }
             };
 
             input.onblur = () => commit(state.nodes, state.edges);
             div.appendChild(input);
-            setTimeout(() => input.focus(), 10);
+            setTimeout(() => {
+                input.focus();
+                input.selectionStart = input.selectionEnd = input.value.length; 
+            }, 10);
         } else {
             const span = document.createElement('span');
-            span.className = 'text-white font-medium text-center px-2 pointer-events-none line-clamp-2 leading-tight';
+            span.className = 'text-white font-medium text-center px-2 pointer-events-none leading-tight';
+            span.style.whiteSpace = 'pre-wrap';
+            span.style.wordBreak = 'break-word';
+            span.style.display = '-webkit-box';
+            span.style.webkitLineClamp = '7'; // Maksimal visual 7 baris
+            span.style.webkitBoxOrient = 'vertical';
+            span.style.overflow = 'hidden';
             span.innerText = node.text;
             div.appendChild(span);
         }
 
-        // --- PERBAIKAN BUG ---
-        // Gunakan insertAdjacentHTML alih-alih innerHTML += agar event listener tidak hilang
+        // Ports
         div.insertAdjacentHTML('beforeend', `<div class="node-port left"></div><div class="node-port right"></div>`);
         
         // Node Interaction
