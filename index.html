@@ -2,335 +2,62 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mindmap Maker Sederhana - V5.1 (Magnet Sempurna)</title>
-    <style>
-        body { margin: 0; padding: 0; font-family: sans-serif; background-color: #f1f2f6; overflow: hidden; }
-        
-        #toolbar { 
-            padding: 10px; background: #ffffff; border-bottom: 2px solid #dfe4ea; 
-            position: relative; z-index: 10; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
-        }
-        button { padding: 8px 12px; cursor: pointer; border: 1px solid #ced6e0; background: #f1f2f6; border-radius: 4px; }
-        button:hover { background: #dfe4ea; }
-        input[type="color"] { border: none; width: 30px; height: 30px; padding: 0; cursor: pointer; background: transparent; }
-
-        #canvas { position: relative; width: 100vw; height: 100vh; overflow: hidden; 
-            background-image: radial-gradient(#ced6e0 1px, transparent 1px);
-            background-size: 40px 40px;
-        }
-
-        /* PERBAIKAN: Membagi layer garis (belakang) dan layer pegangan/handle (depan) */
-        .svg-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
-        #garis-layer { z-index: 1; }   /* Garis di belakang kotak */
-        #handle-layer { z-index: 3; }  /* Ujung garis/colokan SELALU di depan kotak */
-
-        .handle { pointer-events: auto; cursor: grab; }
-        .handle:active { cursor: grabbing; }
-        
-        /* Badan garis sekarang bisa diklik */
-        .garis-path { pointer-events: stroke; cursor: pointer; }
-
-        .node {
-            position: absolute; border: 2px solid rgba(0,0,0,0.2); padding: 10px 15px; border-radius: 8px;
-            cursor: move; min-width: 100px; text-align: center; z-index: 2; user-select: none; /* Node z-index 2 */
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05); transition: border-color 0.2s, box-shadow 0.2s; 
-        }
-        .node.selected { border-color: #3742fa; box-shadow: 0 0 0 3px rgba(55, 66, 250, 0.3); z-index: 4; }
-        .node:focus { outline: none; cursor: text; }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mindmap App PWA</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#020617"> <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="w-full h-screen bg-slate-950 overflow-hidden touch-none relative font-sans text-slate-200">
 
-    <div id="toolbar">
-        <button onclick="tambahKotak()">+ Tambah Kotak</button>
-        <button onclick="tambahGarisManual()">➕ Tambah Garis</button>
-        <span style="border-left: 2px solid #ccc; height: 20px; margin: 0 5px;"></span>
-        
-        <label>Warna Kotak:</label>
-        <input type="color" id="colorPicker" value="#ffeaa7" onchange="ubahWarnaKotak()">
-        <button onclick="hapusTerpilih()" style="color: #e84118; font-weight: bold;">🗑️ Hapus Terpilih</button>
-        
-        <span style="border-left: 2px solid #ccc; height: 20px; margin: 0 5px;"></span>
-        <button onclick="eksporKeFile()">⬇️ Export File</button>
-        <button onclick="document.getElementById('fileUpload').click()">⬆️ Load File</button>
-        <input type="file" id="fileUpload" style="display: none;" onchange="imporDariFile(event)" accept=".json">
-        <button onclick="hapusSemuaData()" style="color: red;">⚠️ Reset Total</button>
+    <div id="app-container" class="w-full h-full absolute inset-0">
+        <div id="bg-grid" class="absolute inset-0 pointer-events-none opacity-20"></div>
+
+        <div id="canvas-layer" class="absolute origin-top-left">
+            <svg id="edges-layer" class="absolute top-0 left-0 overflow-visible pointer-events-none"></svg>
+            <div id="nodes-layer"></div>
+        </div>
     </div>
 
-    <div id="canvas">
-        <svg id="garis-layer" class="svg-layer"></svg>
-        <svg id="handle-layer" class="svg-layer"></svg>
+    <div id="connect-message" class="hidden absolute top-6 left-1/2 -translate-x-1/2 bg-yellow-500/20 text-yellow-300 px-6 py-2 rounded-full border border-yellow-500/50 backdrop-blur-md text-sm font-medium shadow-xl pointer-events-none animate-bounce z-50">
+        Tap kotak pertama
     </div>
 
-    <script>
-        const canvas = document.getElementById('canvas');
-        const garisLayer = document.getElementById('garis-layer');
-        const handleLayer = document.getElementById('handle-layer');
-        const colorPicker = document.getElementById('colorPicker');
+    <div id="node-toolbar" class="hidden absolute bottom-24 left-1/2 -translate-x-1/2 flex bg-slate-800 p-2 rounded-2xl shadow-xl border border-slate-700 backdrop-blur-md gap-2 items-center z-50">
+        <div id="color-picker" class="flex gap-1 px-2 border-r border-slate-600"></div>
+        <button id="btn-delete" class="p-2 text-red-400 hover:bg-slate-700 rounded-xl transition-colors">
+            <i data-lucide="trash-2"></i>
+        </button>
+    </div>
+
+    <div class="toolbar absolute bottom-6 left-1/2 -translate-x-1/2 flex bg-slate-800 p-2 rounded-2xl shadow-xl border border-slate-700 backdrop-blur-md gap-1 z-50 items-center">
+        <button id="btn-save" class="p-3 text-emerald-400 hover:bg-slate-700 rounded-xl transition-colors" title="Save to Cache"><i data-lucide="save"></i></button>
+        <button id="btn-export" class="p-3 text-slate-200 hover:bg-slate-700 rounded-xl transition-colors" title="Export JSON"><i data-lucide="download"></i></button>
+        <label class="p-3 text-slate-200 hover:bg-slate-700 rounded-xl transition-colors cursor-pointer" title="Import JSON">
+            <i data-lucide="upload"></i>
+            <input type="file" id="input-import" accept=".json" class="hidden">
+        </label>
         
-        const GRID_SIZE = 40; 
-        const MAGNET_RADIUS = 40; 
+        <div class="w-px h-8 bg-slate-700 mx-1"></div>
+
+        <button id="btn-add" class="p-3 text-slate-200 hover:bg-slate-700 hover:text-white rounded-xl transition-colors" title="Tambah Kotak"><i data-lucide="plus"></i></button>
+        <div class="w-px h-8 bg-slate-700 mx-1"></div>
         
-        let appData = { nodes: [], lines: [] };
-        let dragInfo = null; 
-        let dragOffsetX = 0;
-        let dragOffsetY = 0;
+        <button id="btn-select" class="p-3 rounded-xl transition-colors bg-blue-600 text-white" title="Pilih & Pindah"><i data-lucide="mouse-pointer-2"></i></button>
+        <button id="btn-connect" class="p-3 rounded-xl transition-colors text-slate-200 hover:bg-slate-700" title="Sambungkan"><i data-lucide="link"></i></button>
+        <div class="w-px h-8 bg-slate-700 mx-1"></div>
         
-        let selectedNodeId = null; 
-        let selectedLineId = null; 
-
-        // --- 1. MEMUAT DATA ---
-        function muatData() {
-            const dataTersimpan = localStorage.getItem('mindmapDataV5');
-            if (dataTersimpan) {
-                appData = JSON.parse(dataTersimpan);
-            } else {
-                appData = { nodes: [{ id: 'node-1', text: 'Ide Utama', x: 120, y: 320, color: '#ffeaa7' }], lines: [] };
-            }
-            renderSemua();
-        }
-
-        // --- 2. RENDER UTAMA ---
-        function renderSemua() {
-            canvas.querySelectorAll('.node').forEach(e => e.remove());
-            garisLayer.innerHTML = '';
-            handleLayer.innerHTML = ''; // Bersihkan layer handle
-
-            appData.nodes.forEach(nodeData => buatElemenKotak(nodeData));
-            updatePosisiGarisMagnet();
-            appData.lines.forEach(lineData => gambarGarisBebas(lineData));
-        }
-
-        // --- 3. MEMBUAT KOTAK ---
-        function buatElemenKotak(data) {
-            const div = document.createElement('div');
-            div.className = 'node';
-            if (data.id === selectedNodeId) div.classList.add('selected'); 
-            
-            div.id = data.id;
-            div.style.left = data.x + 'px';
-            div.style.top = data.y + 'px';
-            div.style.backgroundColor = data.color || '#ffeaa7';
-            div.innerText = data.text;
-            div.contentEditable = true;
-
-            div.addEventListener('blur', (e) => { 
-                data.text = e.target.innerText; simpanDataOtomatis(); renderSemua(); 
-            });
-
-            div.addEventListener('mousedown', (e) => {
-                pilihElemen('node', data.id, data.color);
-                dragInfo = { type: 'node', id: data.id };
-                dragOffsetX = e.clientX - data.x;
-                dragOffsetY = e.clientY - data.y;
-            });
-
-            // Pastikan kotak disisipkan di atas garis layer tapi di bawah handle layer
-            canvas.insertBefore(div, handleLayer);
-        }
-
-        // --- 4. SISTEM MAGNET ---
-        function updatePosisiGarisMagnet() {
-            appData.lines.forEach(line => {
-                if(line.startNode) {
-                    const node = appData.nodes.find(n => n.id === line.startNode);
-                    const el = document.getElementById(line.startNode);
-                    if(node && el) {
-                        line.y1 = node.y + (el.offsetHeight / 2); 
-                        line.x1 = line.startSide === 'left' ? node.x : node.x + el.offsetWidth;
-                    }
-                }
-                if(line.endNode) {
-                    const node = appData.nodes.find(n => n.id === line.endNode);
-                    const el = document.getElementById(line.endNode);
-                    if(node && el) {
-                        line.y2 = node.y + (el.offsetHeight / 2);
-                        line.x2 = line.endSide === 'left' ? node.x : node.x + el.offsetWidth;
-                    }
-                }
-            });
-        }
-
-        function cekMagnetLokasi(x, y) {
-            let targetNode = null; let targetSide = null; let minDistance = MAGNET_RADIUS;
-            appData.nodes.forEach(node => {
-                const el = document.getElementById(node.id);
-                if(!el) return;
-                
-                const leftX = node.x; const leftY = node.y + (el.offsetHeight / 2);
-                const distLeft = Math.hypot(x - leftX, y - leftY); 
-                if(distLeft < minDistance) { minDistance = distLeft; targetNode = node.id; targetSide = 'left'; }
-
-                const rightX = node.x + el.offsetWidth; const rightY = node.y + (el.offsetHeight / 2);
-                const distRight = Math.hypot(x - rightX, y - rightY);
-                if(distRight < minDistance) { minDistance = distRight; targetNode = node.id; targetSide = 'right'; }
-            });
-            return { targetNode, targetSide };
-        }
-
-        // --- 5. MENGGAMBAR GARIS ---
-        function gambarGarisBebas(garis) {
-            const midX = (garis.x1 + garis.x2) / 2;
-            const pathD = `M ${garis.x1} ${garis.y1} C ${midX} ${garis.y1}, ${midX} ${garis.y2}, ${garis.x2} ${garis.y2}`;
-
-            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            path.setAttribute('d', pathD);
-            path.setAttribute('stroke', garis.id === selectedLineId ? '#0984e3' : '#a4b0be');
-            path.setAttribute('stroke-width', garis.id === selectedLineId ? '6' : '3'); 
-            path.setAttribute('fill', 'none');
-            path.setAttribute('class', 'garis-path');
-            
-            // Memungkinkan klik pada badan garis
-            path.addEventListener('mousedown', (e) => {
-                e.stopPropagation(); pilihElemen('line', garis.id, null);
-            });
-
-            garisLayer.appendChild(path);
-
-            // Tampilkan titik pegangan (Handle). Jika nyolok, buat jadi colokan putih kecil.
-            if(garis.startNode) {
-                buatHandle(garis.x1, garis.y1, '#ffffff', garis.id, 'start', '#2ecc71', true);
-            } else {
-                buatHandle(garis.x1, garis.y1, '#2ecc71', garis.id, 'start', 'none', false);
-            }
-
-            if(garis.endNode) {
-                buatHandle(garis.x2, garis.y2, '#ffffff', garis.id, 'end', '#e74c3c', true);
-            } else {
-                buatHandle(garis.x2, garis.y2, '#e74c3c', garis.id, 'end', 'none', false);
-            }
-        }
-
-        function buatHandle(x, y, warnaFill, idGaris, pointType, warnaStroke, isConnected) {
-            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            circle.setAttribute('cx', x);
-            circle.setAttribute('cy', y);
-            circle.setAttribute('r', isConnected ? '6' : '8'); // Mengecil saat dicolok
-            circle.setAttribute('fill', warnaFill);
-            if(warnaStroke !== 'none') {
-                circle.setAttribute('stroke', warnaStroke);
-                circle.setAttribute('stroke-width', '2');
-            }
-            circle.setAttribute('class', 'handle');
-            
-            circle.addEventListener('mousedown', (e) => {
-                e.stopPropagation(); 
-                pilihElemen('line', idGaris, null);
-                
-                // PENTING: Jika ditarik, LANGSUNG copot magnetnya
-                const line = appData.lines.find(l => l.id === idGaris);
-                if (line) {
-                    if (pointType === 'start') { line.startNode = null; line.startSide = null; }
-                    if (pointType === 'end') { line.endNode = null; line.endSide = null; }
-                }
-
-                dragInfo = { type: pointType, id: idGaris };
-                renderSemua(); // Update tampilan agar langsung copot
-            });
-            
-            // Masukkan ke layer TERATAS
-            handleLayer.appendChild(circle);
-        }
-
-        // --- 6. LOGIKA MENGGESER ---
-        function pilihElemen(tipe, id, color) {
-            if (tipe === 'node') { selectedNodeId = id; selectedLineId = null; if (color) colorPicker.value = color; } 
-            else if (tipe === 'line') { selectedLineId = id; selectedNodeId = null; }
-            renderSemua(); 
-        }
-
-        function onMove(clientX, clientY) {
-            if (!dragInfo) return;
-            
-            const rawX = clientX; const rawY = clientY;
-            const snappedX = Math.round(rawX / GRID_SIZE) * GRID_SIZE;
-            const snappedY = Math.round(rawY / GRID_SIZE) * GRID_SIZE;
-
-            if (dragInfo.type === 'node') {
-                const node = appData.nodes.find(n => n.id === dragInfo.id);
-                if (node) {
-                    node.x = Math.round((clientX - dragOffsetX) / GRID_SIZE) * GRID_SIZE;
-                    node.y = Math.round((clientY - dragOffsetY) / GRID_SIZE) * GRID_SIZE;
-                }
-            } 
-            else if (dragInfo.type === 'start') {
-                const line = appData.lines.find(l => l.id === dragInfo.id);
-                if (line) { line.x1 = snappedX; line.y1 = snappedY; }
-            } 
-            else if (dragInfo.type === 'end') {
-                const line = appData.lines.find(l => l.id === dragInfo.id);
-                if (line) { line.x2 = snappedX; line.y2 = snappedY; }
-            }
-            
-            renderSemua();
-        }
-
-        window.addEventListener('mousemove', (e) => onMove(e.clientX, e.clientY));
+        <button id="btn-undo" class="p-3 text-slate-200 hover:bg-slate-700 rounded-xl transition-colors disabled:opacity-30"><i data-lucide="undo-2"></i></button>
+        <button id="btn-redo" class="p-3 text-slate-200 hover:bg-slate-700 rounded-xl transition-colors disabled:opacity-30"><i data-lucide="redo-2"></i></button>
+        <div class="w-px h-8 bg-slate-700 mx-1"></div>
         
-        window.addEventListener('mouseup', () => { 
-            if (dragInfo && (dragInfo.type === 'start' || dragInfo.type === 'end')) {
-                const line = appData.lines.find(l => l.id === dragInfo.id);
-                if (line) {
-                    const x = dragInfo.type === 'start' ? line.x1 : line.x2;
-                    const y = dragInfo.type === 'start' ? line.y1 : line.y2;
-                    const magnet = cekMagnetLokasi(x, y);
+        <button id="btn-zoom-out" class="p-3 text-slate-200 hover:bg-slate-700 rounded-xl transition-colors"><i data-lucide="zoom-out"></i></button>
+        <button id="btn-zoom-in" class="p-3 text-slate-200 hover:bg-slate-700 rounded-xl transition-colors"><i data-lucide="zoom-in"></i></button>
+    </div>
 
-                    if (dragInfo.type === 'start' && magnet.targetNode) {
-                        line.startNode = magnet.targetNode; line.startSide = magnet.targetSide;
-                    } else if (dragInfo.type === 'end' && magnet.targetNode) {
-                        line.endNode = magnet.targetNode; line.endSide = magnet.targetSide;
-                    }
-                }
-            }
-
-            if(dragInfo) simpanDataOtomatis();
-            dragInfo = null; 
-            renderSemua(); 
-        });
-
-        canvas.addEventListener('mousedown', (e) => {
-            if (e.target === canvas || e.target === garisLayer || e.target === handleLayer) {
-                selectedNodeId = null; selectedLineId = null; renderSemua();
-            }
-        });
-
-        // --- 7. MENU ---
-        function tambahKotak() {
-            appData.nodes.push({ id: 'node-' + Date.now(), text: 'Kotak Baru', x: 200, y: 160, color: '#ffeaa7' });
-            simpanDataOtomatis(); renderSemua();
-        }
-
-        function tambahGarisManual() {
-            appData.lines.push({ id: 'line-' + Date.now(), x1: 200, y1: 200, x2: 400, y2: 200, startNode: null, endNode: null });
-            simpanDataOtomatis(); renderSemua();
-        }
-
-        function ubahWarnaKotak() {
-            if (selectedNodeId) {
-                const node = appData.nodes.find(n => n.id === selectedNodeId);
-                if (node) { node.color = colorPicker.value; simpanDataOtomatis(); renderSemua(); }
-            }
-        }
-
-        function hapusTerpilih() {
-            if (selectedNodeId) {
-                appData.nodes = appData.nodes.filter(n => n.id !== selectedNodeId);
-                appData.lines = appData.lines.filter(l => l.startNode !== selectedNodeId && l.endNode !== selectedNodeId); 
-                selectedNodeId = null;
-            } else if (selectedLineId) {
-                appData.lines = appData.lines.filter(l => l.id !== selectedLineId);
-                selectedLineId = null;
-            } else { return alert("Klik kotak atau klik garis/ujung garis untuk menghapusnya."); }
-            simpanDataOtomatis(); renderSemua();
-        }
-
-        function simpanDataOtomatis() { localStorage.setItem('mindmapDataV5', JSON.stringify(appData)); }
-        function hapusSemuaData() { if(confirm('Hapus semua?')) { localStorage.clear(); appData = { nodes: [], lines: [] }; selectedNodeId = null; selectedLineId = null; muatData(); } }
-        function eksporKeFile() { const blob = new Blob([JSON.stringify(appData, null, 2)], { type: "application/json" }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "mindmap_magnet.json"; document.body.appendChild(a); a.click(); document.body.removeChild(a); }
-        function imporDariFile(event) { const file = event.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = function(e) { try { const data = JSON.parse(e.target.result); if (data && Array.isArray(data.nodes)) { appData = data; simpanDataOtomatis(); renderSemua(); } } catch (e) { alert("Error."); } }; reader.readAsText(file); event.target.value = ''; }
-
-        muatData();
-    </script>
+    <script src="script.js"></script>
 </body>
 </html>
