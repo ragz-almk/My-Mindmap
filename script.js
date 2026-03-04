@@ -3,19 +3,34 @@ const GRID_SIZE = 20;
 const NODE_HEIGHT = 60;
 const COLORS = ['#334155', '#2563eb', '#dc2626', '#16a34a', '#ca8a04', '#9333ea'];
 
-// Fungsi untuk menghitung lebar kotak agar pas dengan teks dan grid
+// --- FIX CSS KHUSUS MOBILE & INPUT ---
+// Memaksa browser agar input bisa disentuh, difokuskan, dan diseleksi
+const styleSheet = document.createElement("style");
+styleSheet.innerText = `
+    .node-input {
+        width: 90%;
+        background: transparent;
+        color: white;
+        text-align: center;
+        outline: none;
+        font-weight: 500;
+        pointer-events: auto !important;
+        user-select: text !important;
+        -webkit-user-select: text !important;
+        touch-action: auto !important;
+    }
+`;
+document.head.appendChild(styleSheet);
+
+// --- PERHITUNGAN LEBAR DINAMIS ---
 const calculateNodeWidth = (text) => {
-    const minWidth = 120; // Lebar minimal (6 kotak grid)
-    const approxCharWidth = 9; // Perkiraan lebar 1 huruf dalam pixel
-    const padding = 40; // Ruang kosong kiri dan kanan teks
+    if (!text) return 120; // Keamanan jika teks kosong
+    const minWidth = 120; 
+    const approxCharWidth = 10; // Lebar estimasi 1 huruf
+    const padding = 50; // Ruang kosong kiri-kanan
     
-    // Hitung panjang kasar
     const rawWidth = (text.length * approxCharWidth) + padding;
-    
-    // Bulatkan ke kelipatan GRID_SIZE (20) terdekat agar tetap menempel di grid
-    const snappedWidth = Math.ceil(rawWidth / GRID_SIZE) * GRID_SIZE;
-    
-    return Math.max(minWidth, snappedWidth);
+    return Math.max(minWidth, Math.ceil(rawWidth / GRID_SIZE) * GRID_SIZE);
 };
 
 // --- STATE MANAGEMENT ---
@@ -24,7 +39,7 @@ let state = {
     edges: [],
     zoom: 1,
     pan: { x: 0, y: 0 },
-    activeTool: 'select', // 'select' | 'connect'
+    activeTool: 'select',
     selectedNodeId: null,
     connectSourceId: null
 };
@@ -36,7 +51,7 @@ let future = [];
 let isDraggingViewport = false;
 let isDraggingNode = false;
 let dragStart = { x: 0, y: 0, panX: 0, panY: 0, nodeX: 0, nodeY: 0, offsetX: 0, offsetY: 0 };
-let initialPinchDist = null; // Untuk Pinch to Zoom
+let initialPinchDist = null; 
 
 // DOM Elements
 const container = document.getElementById('app-container');
@@ -65,15 +80,13 @@ const commit = (newNodes, newEdges) => {
     history.push({ nodes: JSON.parse(JSON.stringify(state.nodes)), edges: JSON.parse(JSON.stringify(state.edges)) });
     if (history.length > 15) history.shift();
     future = [];
-    state.nodes = newNodes;
-    state.edges = newEdges;
+    state.nodes = JSON.parse(JSON.stringify(newNodes));
+    state.edges = JSON.parse(JSON.stringify(newEdges));
     render();
 };
 
 const getOrthogonalPath = (source, target) => {
     if (!source || !target) return '';
-    
-    // Hitung lebar dinamis untuk masing-masing kotak
     const sourceWidth = calculateNodeWidth(source.text);
     const targetWidth = calculateNodeWidth(target.text);
 
@@ -86,9 +99,18 @@ const getOrthogonalPath = (source, target) => {
     return `M ${startX} ${startY} L ${midX} ${startY} L ${midX} ${endY} L ${endX} ${endY}`;
 };
 
+// Fungsi khusus menggambar ulang garis tanpa me-refresh kotak (agar keyboard tidak hilang)
+const drawEdges = () => {
+    edgesLayer.innerHTML = state.edges.map(edge => {
+        const source = state.nodes.find(n => n.id === edge.source);
+        const target = state.nodes.find(n => n.id === edge.target);
+        if (!source || !target) return '';
+        return `<path d="${getOrthogonalPath(source, target)}" fill="none" stroke="${source.color || '#475569'}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" class="opacity-60"></path>`;
+    }).join('');
+};
+
 // --- RENDER ENGINE ---
 function render() {
-    // Render Transform
     canvasLayer.style.transform = `translate(${state.pan.x}px, ${state.pan.y}px) scale(${state.zoom})`;
     bgGrid.style.backgroundSize = `${GRID_SIZE * state.zoom}px ${GRID_SIZE * state.zoom}px`;
     bgGrid.style.backgroundImage = `
@@ -97,69 +119,77 @@ function render() {
     `;
     bgGrid.style.backgroundPosition = `${state.pan.x}px ${state.pan.y}px`;
 
-    // Render Edges
-    edgesLayer.innerHTML = state.edges.map(edge => {
-        const source = state.nodes.find(n => n.id === edge.source);
-        const target = state.nodes.find(n => n.id === edge.target);
-        return `<path d="${getOrthogonalPath(source, target)}" fill="none" stroke="${source?.color || '#475569'}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" class="opacity-60"></path>`;
-    }).join('');
+    drawEdges(); // Gambar garis sambungan
 
     // Render Nodes
     nodesLayer.innerHTML = '';
     state.nodes.forEach(node => {
         const div = document.createElement('div');
-        const nodeWidth = calculateNodeWidth(node.text); // Ambil lebar dinamis
+        const nodeWidth = calculateNodeWidth(node.text); 
         
         div.className = `node ${state.selectedNodeId === node.id ? 'selected' : ''} ${state.connectSourceId === node.id ? 'connecting' : ''}`;
-        div.style.width = `${nodeWidth}px`; // Gunakan lebar dinamis
+        div.style.width = `${nodeWidth}px`;
         div.style.height = `${NODE_HEIGHT}px`;
         div.style.transform = `translate(${node.x}px, ${node.y}px)`;
         div.style.backgroundColor = node.color;
         
-        // Node Content
+        // Mode Edit Teks
         if (state.selectedNodeId === node.id && state.activeTool === 'select') {
             const input = document.createElement('input');
             input.type = 'text';
             input.className = 'node-input';
             input.value = node.text;
-            input.onpointerdown = e => e.stopPropagation();
             
+            // Hentikan penjalaran klik/sentuh agar input bisa fokus normal
+            const stopEvent = (e) => e.stopPropagation();
+            input.addEventListener('pointerdown', stopEvent);
+            input.addEventListener('touchstart', stopEvent, { passive: true });
+            input.addEventListener('mousedown', stopEvent);
+            
+            // Berubah saat diketik (Memanjang real-time)
             input.oninput = e => { 
-                node.text = e.target.value; 
-                // Lebarkan kotak secara real-time saat ngetik
-                div.style.width = `${calculateNodeWidth(e.target.value)}px`;
+                const val = e.target.value;
+                node.text = val; 
+                div.style.width = `${calculateNodeWidth(val)}px`; // Besarkan kotak
+                drawEdges(); // Gambar ulang garis tanpa hapus kursor
             }; 
             
-            // FITUR BARU: Tekan Enter untuk simpan
+            // Simpan otomatis jika tekan Enter
             input.onkeydown = e => {
                 if (e.key === 'Enter') {
-                    input.blur(); // Ini akan memicu onblur di bawah
+                    e.preventDefault();
+                    input.blur(); 
                 }
             };
             
-            input.onblur = () => {
-                commit(state.nodes, state.edges);
-                render(); // Gambar ulang agar posisi garis ikut bergeser
+            // Proses simpan data (Anti revert)
+            input.onblur = (e) => {
+                node.text = e.target.value; // Tangkap teks terakhir sebelum blur
+                commit(state.nodes, state.edges); 
             };
             
             div.appendChild(input);
-            setTimeout(() => input.focus(), 10);
+            
+            // Fokus otomatis
+            setTimeout(() => {
+                input.focus();
+                input.setSelectionRange(input.value.length, input.value.length);
+            }, 50);
         } else {
+            // Mode Normal (Tampil text saja)
             const span = document.createElement('span');
             span.className = 'text-white font-medium text-center px-2 pointer-events-none line-clamp-2 leading-tight';
             span.innerText = node.text;
             div.appendChild(span);
         }
 
-        // Ports
+        // Ports Visual
         div.innerHTML += `<div class="node-port left"></div><div class="node-port right"></div>`;
         
-        // Node Interaction
         div.onpointerdown = (e) => handleNodePointerDown(e, node);
         nodesLayer.appendChild(div);
     });
 
-    // Update UI Elements
     connectMessage.classList.toggle('hidden', state.activeTool !== 'connect');
     if (state.activeTool === 'connect') {
         connectMessage.innerText = state.connectSourceId ? 'Tap kotak kedua untuk menyambung' : 'Tap kotak pertama';
@@ -199,11 +229,9 @@ function handleNodePointerDown(e, node) {
 }
 
 container.addEventListener('pointerdown', (e) => {
-    // FITUR BARU: Paksa simpan teks jika sedang mengetik dan layar disentuh
     if (document.activeElement && document.activeElement.tagName === 'INPUT') {
-        document.activeElement.blur();
+        document.activeElement.blur(); // Simpan teks jika klik area kosong
     }
-
     if (e.target.closest('.toolbar') || e.target.closest('#node-toolbar') || e.target.closest('.node')) return;
     
     isDraggingViewport = true;
@@ -231,7 +259,6 @@ const endDrag = () => {
     if (isDraggingNode) {
         const node = state.nodes.find(n => n.id === state.selectedNodeId);
         if (node && (node.x !== dragStart.nodeX || node.y !== dragStart.nodeY)) {
-            // Restore position to save history, then apply new
             const finalX = node.x; const finalY = node.y;
             node.x = dragStart.nodeX; node.y = dragStart.nodeY;
             commit(state.nodes, state.edges);
@@ -246,9 +273,7 @@ const endDrag = () => {
 container.addEventListener('pointerup', endDrag);
 container.addEventListener('pointerleave', endDrag);
 
-// --- NEW FEATURES: ZOOMING ---
-
-// Scroll for PC Zoom
+// --- ZOOMING LOGIC ---
 container.addEventListener('wheel', (e) => {
     if (e.target.closest('.toolbar') || e.target.closest('#node-toolbar')) return;
     e.preventDefault();
@@ -257,10 +282,9 @@ container.addEventListener('wheel', (e) => {
     render();
 }, { passive: false });
 
-// Pinch for Mobile Zoom
 container.addEventListener('touchstart', (e) => {
     if (e.touches.length === 2) {
-        isDraggingViewport = false; // Batalkan pan jika mulai pinch
+        isDraggingViewport = false; 
         initialPinchDist = Math.hypot(
             e.touches[0].clientX - e.touches[1].clientX,
             e.touches[0].clientY - e.touches[1].clientY
@@ -277,7 +301,7 @@ container.addEventListener('touchmove', (e) => {
         );
         const scaleChange = dist / initialPinchDist;
         state.zoom = Math.max(0.3, Math.min(2.5, state.zoom * scaleChange));
-        initialPinchDist = dist; // update untuk gerakan kontinyu
+        initialPinchDist = dist; 
         render();
     }
 }, { passive: false });
@@ -290,7 +314,7 @@ document.getElementById('btn-add').onclick = () => {
     const viewportCenterY = -state.pan.y / state.zoom + window.innerHeight / (2 * state.zoom);
     
     const defaultText = 'Kotak Baru';
-    const startWidth = calculateNodeWidth(defaultText); // Hitung lebar awal
+    const startWidth = calculateNodeWidth(defaultText); 
     
     const newNode = {
         id: Date.now().toString(),
@@ -353,15 +377,12 @@ COLORS.forEach(color => {
     colorContainer.appendChild(btn);
 });
 
-// --- NEW FEATURES: DATA MANAGEMENT ---
-
-// Save to LocalStorage
+// --- DATA MANAGEMENT ---
 document.getElementById('btn-save').onclick = () => {
     localStorage.setItem('mindmap_cache', JSON.stringify({ nodes: state.nodes, edges: state.edges }));
     alert('Progress berhasil disimpan secara lokal!');
 };
 
-// Export to JSON
 document.getElementById('btn-export').onclick = () => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ nodes: state.nodes, edges: state.edges }));
     const downloadAnchorNode = document.createElement('a');
@@ -372,7 +393,6 @@ document.getElementById('btn-export').onclick = () => {
     downloadAnchorNode.remove();
 };
 
-// Import from JSON
 document.getElementById('input-import').onchange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -389,10 +409,9 @@ document.getElementById('input-import').onchange = (e) => {
         }
     };
     reader.readAsText(file);
-    e.target.value = ''; // reset input
+    e.target.value = ''; 
 };
 
-// Load Cache on Startup
 function loadCache() {
     const cached = localStorage.getItem('mindmap_cache');
     if (cached) {
@@ -404,13 +423,9 @@ function loadCache() {
     }
 }
 
-// Register Service Worker for PWA
 if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js')
-        .then(() => console.log('Service Worker Registered'))
-        .catch(err => console.error('SW Registration Failed', err));
+    navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 
-// Init Application
 loadCache();
 render();
