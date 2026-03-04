@@ -636,6 +636,12 @@ document.addEventListener('keydown', (e) => {
             return;
         }
 
+        // --- FITUR BARU: Ctrl+O untuk Import JSON ---
+        if (e.key.toLowerCase() === 'o') {
+            e.preventDefault(); // Mencegah dialog "Open File" bawaan browser
+            document.getElementById('input-import').click(); // Membuka jendela pilih file
+            return;
+
         if (e.key.toLowerCase() === 'z') {
             e.preventDefault(); 
             if (e.shiftKey) {
