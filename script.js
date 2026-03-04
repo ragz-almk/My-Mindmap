@@ -641,6 +641,7 @@ document.addEventListener('keydown', (e) => {
             e.preventDefault(); // Mencegah dialog "Open File" bawaan browser
             document.getElementById('input-import').click(); // Membuka jendela pilih file
             return;
+        }
 
         if (e.key.toLowerCase() === 'z') {
             e.preventDefault(); 
