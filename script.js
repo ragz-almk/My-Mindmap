@@ -108,16 +108,6 @@ function render() {
     nodesLayer.innerHTML = '';
     state.nodes.forEach(node => {
         const div = document.createElement('div');
-        div.className = `node ${state.selectedNodeId === node.id ? 'selected' : ''} ${state.connectSourceId === node.id ? 'connecting' : ''}`;
-        div.style.width = `${NODE_WIDTH}px`;
-        div.style.height = `${NODE_HEIGHT}px`;
-        div.style.transform = `translate(${node.x}px, ${node.y}px)`;
-        div.style.backgroundColor = node.color;
-        
-        // Render Nodes
-    nodesLayer.innerHTML = '';
-    state.nodes.forEach(node => {
-        const div = document.createElement('div');
         const nodeWidth = calculateNodeWidth(node.text); // Ambil lebar dinamis
         
         div.className = `node ${state.selectedNodeId === node.id ? 'selected' : ''} ${state.connectSourceId === node.id ? 'connecting' : ''}`;
