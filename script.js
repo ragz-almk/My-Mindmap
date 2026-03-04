@@ -1,7 +1,5 @@
 // script.js
 const GRID_SIZE = 20;
-const NODE_WIDTH = 120;
-const NODE_HEIGHT = 60;
 const COLORS = ['#334155', '#2563eb', '#dc2626', '#16a34a', '#ca8a04', '#9333ea'];
 
 // --- STATE MANAGEMENT ---
@@ -37,6 +35,34 @@ const nodeToolbar = document.getElementById('node-toolbar');
 lucide.createIcons();
 
 // --- HELPER FUNCTIONS ---
+const getNodeSize = (text) => {
+    const MAX_W = 10 * GRID_SIZE; // Maksimal horizontal 10 grid (200px)
+    const MAX_H = 7 * GRID_SIZE;  // Maksimal vertikal 7 grid (140px)
+    const MIN_W = 120; // Minimal 6 grid
+    const MIN_H = 60;  // Minimal 3 grid
+    
+    // Pisahkan berdasarkan baris baru jika user memakai Shift+Enter
+    const lines = (text || '').split('\n');
+    const longestLine = Math.max(...lines.map(l => l.length), 0);
+    
+    // Hitung estimasi lebar: ~8px per huruf + 30px padding
+    const estimatedWidth = (longestLine * 8) + 30;
+    let w = Math.min(MAX_W, Math.max(MIN_W, estimatedWidth));
+    
+    // Hitung total baris setelah teks memanjang (word-wrap)
+    const totalLines = lines.reduce((acc, line) => {
+        const wrapCount = Math.ceil(((line.length * 8) + 30) / MAX_W);
+        return acc + (wrapCount || 1);
+    }, 0);
+    
+    // Hitung estimasi tinggi: ~20px per baris + 40px padding
+    const estimatedHeight = (totalLines * 20) + 40;
+    let h = Math.min(MAX_H, Math.max(MIN_H, estimatedHeight));
+    
+    // Paskan ukuran agar tetap menempel rapi di grid
+    return { width: snapToGrid(w), height: snapToGrid(h) };
+};
+
 const snapToGrid = (value) => Math.round(value / GRID_SIZE) * GRID_SIZE;
 
 const getCanvasCoords = (clientX, clientY) => {
@@ -58,11 +84,15 @@ const commit = (newNodes, newEdges) => {
 
 const getOrthogonalPath = (source, target) => {
     if (!source || !target) return '';
-    const startX = source.x + NODE_WIDTH / 2;
-    const startY = source.y + NODE_HEIGHT / 2;
-    const endX = target.x + NODE_WIDTH / 2;
-    const endY = target.y + NODE_HEIGHT / 2;
+    const sourceSize = getNodeSize(source.text);
+    const targetSize = getNodeSize(target.text);
+    
+    const startX = source.x + sourceSize.width / 2;
+    const startY = source.y + sourceSize.height / 2;
+    const endX = target.x + targetSize.width / 2;
+    const endY = target.y + targetSize.height / 2;
     const midX = snapToGrid((startX + endX) / 2);
+    
     return `M ${startX} ${startY} L ${midX} ${startY} L ${midX} ${endY} L ${endX} ${endY}`;
 };
 
