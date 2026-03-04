@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mindmap Maker Sederhana - V3</title>
+    <title>Mindmap Maker Sederhana - V4 (Garis Bebas)</title>
     <style>
         body { margin: 0; padding: 0; font-family: sans-serif; background-color: #f1f2f6; overflow: hidden; }
         
@@ -13,7 +13,6 @@
         }
         button { padding: 8px 12px; cursor: pointer; border: 1px solid #ced6e0; background: #f1f2f6; border-radius: 4px; }
         button:hover { background: #dfe4ea; }
-        
         input[type="color"] { border: none; width: 30px; height: 30px; padding: 0; cursor: pointer; background: transparent; }
 
         #canvas { position: relative; width: 100vw; height: 100vh; overflow: hidden; 
@@ -21,27 +20,19 @@
             background-size: 40px 40px;
         }
 
+        /* Perubahan penting: pointer-events: none pada layer, agar kita bisa klik elemen SVG di dalamnya */
         #garis-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+        
+        /* Agar titik pegangan garis bisa diklik/didrag */
+        .handle { pointer-events: auto; cursor: grab; }
+        .handle:active { cursor: grabbing; }
 
         .node {
-            position: absolute;
-            border: 2px solid rgba(0,0,0,0.2);
-            padding: 10px 15px;
-            border-radius: 8px;
-            cursor: move;
-            min-width: 100px;
-            text-align: center;
-            z-index: 2;
-            user-select: none;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-            transition: border-color 0.2s, box-shadow 0.2s; 
+            position: absolute; border: 2px solid rgba(0,0,0,0.2); padding: 10px 15px; border-radius: 8px;
+            cursor: move; min-width: 100px; text-align: center; z-index: 2; user-select: none;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05); transition: border-color 0.2s, box-shadow 0.2s; 
         }
-
-        .node.selected {
-            border-color: #3742fa;
-            box-shadow: 0 0 0 3px rgba(55, 66, 250, 0.3);
-            z-index: 3;
-        }
+        .node.selected { border-color: #3742fa; box-shadow: 0 0 0 3px rgba(55, 66, 250, 0.3); z-index: 3; }
         .node:focus { outline: none; cursor: text; }
     </style>
 </head>
@@ -49,20 +40,18 @@
 
     <div id="toolbar">
         <button onclick="tambahKotak()">+ Tambah Kotak</button>
+        <button onclick="tambahGarisManual()">➕ Tambah Garis</button>
         <span style="border-left: 2px solid #ccc; height: 20px; margin: 0 5px;"></span>
         
-        <label>Warna:</label>
+        <label>Warna Kotak:</label>
         <input type="color" id="colorPicker" value="#ffeaa7" onchange="ubahWarnaKotak()">
-        <button onclick="putusKoneksi()">✂️ Putus Garis</button>
-        <button id="btnHubungkan" onclick="mulaiHubungkan()">🔗 Hubungkan ke...</button>
+        <button onclick="hapusTerpilih()" style="color: #e84118; font-weight: bold;">🗑️ Hapus Terpilih</button>
         
         <span style="border-left: 2px solid #ccc; height: 20px; margin: 0 5px;"></span>
-        <button onclick="hapusData()" style="color: red;">🗑️ Hapus Semua</button>
-        
-        <span style="border-left: 2px solid #ccc; height: 20px; margin: 0 5px;"></span>
-        <button onclick="eksporKeFile()">⬇️ Export File (.json)</button>
+        <button onclick="eksporKeFile()">⬇️ Export File</button>
         <button onclick="document.getElementById('fileUpload').click()">⬆️ Load File</button>
         <input type="file" id="fileUpload" style="display: none;" onchange="imporDariFile(event)" accept=".json">
+        <button onclick="hapusSemuaData()" style="color: red;">⚠️ Reset Total</button>
     </div>
 
     <div id="canvas">
@@ -73,42 +62,64 @@
         const canvas = document.getElementById('canvas');
         const garisLayer = document.getElementById('garis-layer');
         const colorPicker = document.getElementById('colorPicker');
-        const btnHubungkan = document.getElementById('btnHubungkan');
         
         const GRID_SIZE = 40; 
-        let mindmapData = [];
-        let isDragging = false;
-        let draggedNode = null;
+        
+        // Struktur data baru: memisahkan kotak dan garis
+        let appData = { nodes: [], lines: [] };
+        
+        // Sistem Dragging yang lebih canggih
+        let dragInfo = null; // Menyimpan info apa yang sedang digeser (kotak atau ujung garis)
         let dragOffsetX = 0;
         let dragOffsetY = 0;
         
         let selectedNodeId = null; 
-        let modeMenghubungkan = false; 
+        let selectedLineId = null; 
 
-        // --- FUNGSI MEMUAT DATA LOKAL ---
+        // --- 1. FUNGSI MEMUAT DATA ---
         function muatData() {
-            const dataTersimpan = localStorage.getItem('mindmapDataV3');
+            const dataTersimpan = localStorage.getItem('mindmapDataV4');
             if (dataTersimpan) {
-                mindmapData = JSON.parse(dataTersimpan);
+                appData = JSON.parse(dataTersimpan);
             } else {
-                mindmapData = [{ id: 'node-1', text: 'Ide Utama', x: 120, y: 320, parentId: null, color: '#ffeaa7' }];
+                // Konversi data V3 ke V4 jika ada, agar project lamamu tidak hilang
+                const dataLama = localStorage.getItem('mindmapDataV3');
+                if(dataLama) {
+                    const oldNodes = JSON.parse(dataLama);
+                    appData = { nodes: oldNodes, lines: [] };
+                    // Ubah koneksi lama menjadi garis manual
+                    oldNodes.forEach(node => {
+                        if(node.parentId) {
+                            const parent = oldNodes.find(n => n.id === node.parentId);
+                            if(parent) {
+                                appData.lines.push({
+                                    id: 'line-' + Date.now() + Math.random(),
+                                    x1: parent.x + 120, y1: parent.y + 20, 
+                                    x2: node.x, y2: node.y + 20
+                                });
+                            }
+                        }
+                    });
+                } else {
+                    appData = { 
+                        nodes: [{ id: 'node-1', text: 'Ide Utama', x: 120, y: 320, color: '#ffeaa7' }], 
+                        lines: [] 
+                    };
+                }
             }
             renderSemua();
         }
 
-        // --- FUNGSI RENDER UTAMA ---
+        // --- 2. FUNGSI RENDER UTAMA ---
         function renderSemua() {
             canvas.querySelectorAll('.node').forEach(e => e.remove());
             garisLayer.innerHTML = '';
 
-            mindmapData.forEach(data => buatElemenKotak(data));
-            
-            mindmapData.forEach(data => {
-                if (data.parentId) gambarGaris(data.parentId, data.id);
-            });
+            appData.nodes.forEach(nodeData => buatElemenKotak(nodeData));
+            appData.lines.forEach(lineData => gambarGarisBebas(lineData));
         }
 
-        // --- FUNGSI MEMBUAT KOTAK ---
+        // --- 3. MEMBUAT KOTAK ---
         function buatElemenKotak(data) {
             const div = document.createElement('div');
             div.className = 'node';
@@ -124,20 +135,8 @@
             div.addEventListener('blur', (e) => { data.text = e.target.innerText; simpanDataOtomatis(); });
 
             div.addEventListener('mousedown', (e) => {
-                if (modeMenghubungkan && selectedNodeId && selectedNodeId !== data.id) {
-                    const nodeAnak = mindmapData.find(n => n.id === selectedNodeId);
-                    nodeAnak.parentId = data.id;
-                    modeMenghubungkan = false;
-                    btnHubungkan.innerText = "🔗 Hubungkan ke...";
-                    btnHubungkan.style.backgroundColor = "";
-                    renderSemua();
-                    simpanDataOtomatis();
-                    return; 
-                }
-
-                pilihKotak(data.id, data.color);
-                isDragging = true;
-                draggedNode = data;
+                pilihElemen('node', data.id, data.color);
+                dragInfo = { type: 'node', id: data.id };
                 dragOffsetX = e.clientX - data.x;
                 dragOffsetY = e.clientY - data.y;
             });
@@ -145,139 +144,157 @@
             canvas.appendChild(div);
         }
 
-        // --- FUNGSI PILIH KOTAK ---
-        function pilihKotak(id, color) {
-            selectedNodeId = id;
-            if (color) colorPicker.value = color; 
+        // --- 4. MENGGAMBAR GARIS BEBAS ---
+        function gambarGarisBebas(garis) {
+            const midX = (garis.x1 + garis.x2) / 2;
+            const pathD = `M ${garis.x1} ${garis.y1} C ${midX} ${garis.y1}, ${midX} ${garis.y2}, ${garis.x2} ${garis.y2}`;
+
+            // Gambar jalurnya
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', pathD);
+            // Garis akan berubah biru jika dipilih
+            path.setAttribute('stroke', garis.id === selectedLineId ? '#0984e3' : '#a4b0be');
+            path.setAttribute('stroke-width', garis.id === selectedLineId ? '5' : '3'); 
+            path.setAttribute('fill', 'none');
+            garisLayer.appendChild(path);
+
+            // Gambar pegangan (handle) titik Awal
+            buatHandle(garis.x1, garis.y1, '#2ecc71', garis.id, 'start'); // Hijau untuk awal
+            // Gambar pegangan (handle) titik Akhir
+            buatHandle(garis.x2, garis.y2, '#e74c3c', garis.id, 'end');   // Merah untuk akhir
+        }
+
+        function buatHandle(x, y, warna, idGaris, pointType) {
+            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('cx', x);
+            circle.setAttribute('cy', y);
+            circle.setAttribute('r', '8'); // Ukuran bulatan
+            circle.setAttribute('fill', warna);
+            circle.setAttribute('class', 'handle');
+            
+            circle.addEventListener('mousedown', (e) => {
+                e.stopPropagation(); // Agar tidak men-trigger klik kanvas
+                pilihElemen('line', idGaris, null);
+                dragInfo = { type: pointType, id: idGaris };
+            });
+            
+            garisLayer.appendChild(circle);
+        }
+
+        // --- 5. LOGIKA MEMILIH & DRAGGING ---
+        function pilihElemen(tipe, id, color) {
+            if (tipe === 'node') {
+                selectedNodeId = id; selectedLineId = null;
+                if (color) colorPicker.value = color; 
+            } else if (tipe === 'line') {
+                selectedLineId = id; selectedNodeId = null;
+            }
             renderSemua(); 
         }
 
-        // --- FUNGSI MENGGAMBAR GARIS ---
-        function gambarGaris(idInduk, idAnak) {
-            const elemenInduk = document.getElementById(idInduk);
-            const elemenAnak = document.getElementById(idAnak);
-            if (!elemenInduk || !elemenAnak) return;
-
-            const dataInduk = mindmapData.find(n => n.id === idInduk);
-            const dataAnak = mindmapData.find(n => n.id === idAnak);
-
-            const x1 = dataInduk.x + elemenInduk.offsetWidth; 
-            const y1 = dataInduk.y + (elemenInduk.offsetHeight / 2);
-
-            const x2 = dataAnak.x;
-            const y2 = dataAnak.y + (elemenAnak.offsetHeight / 2);
-
-            const midX = (x1 + x2) / 2;
-            const pathD = `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`;
-
-            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            path.setAttribute('d', pathD);
-            path.setAttribute('stroke', '#a4b0be');
-            path.setAttribute('stroke-width', '3'); 
-            path.setAttribute('fill', 'none');
-
-            garisLayer.appendChild(path);
-        }
-
-        // --- LOGIKA MENGGESER ---
         function onMove(clientX, clientY) {
-            if (!isDragging || !draggedNode) return;
+            if (!dragInfo) return;
             
-            let rawX = clientX - dragOffsetX;
-            let rawY = clientY - dragOffsetY;
+            // Mengubah posisi kursor menjadi posisi di kanvas & menjadikannya menempel ke grid (Snap)
+            const rawX = clientX;
+            const rawY = clientY;
+            const snappedX = Math.round(rawX / GRID_SIZE) * GRID_SIZE;
+            const snappedY = Math.round(rawY / GRID_SIZE) * GRID_SIZE;
 
-            draggedNode.x = Math.round(rawX / GRID_SIZE) * GRID_SIZE;
-            draggedNode.y = Math.round(rawY / GRID_SIZE) * GRID_SIZE;
+            if (dragInfo.type === 'node') {
+                const node = appData.nodes.find(n => n.id === dragInfo.id);
+                if (node) {
+                    node.x = Math.round((clientX - dragOffsetX) / GRID_SIZE) * GRID_SIZE;
+                    node.y = Math.round((clientY - dragOffsetY) / GRID_SIZE) * GRID_SIZE;
+                }
+            } 
+            else if (dragInfo.type === 'start') {
+                const line = appData.lines.find(l => l.id === dragInfo.id);
+                if (line) { line.x1 = snappedX; line.y1 = snappedY; }
+            } 
+            else if (dragInfo.type === 'end') {
+                const line = appData.lines.find(l => l.id === dragInfo.id);
+                if (line) { line.x2 = snappedX; line.y2 = snappedY; }
+            }
             
             renderSemua();
         }
 
         window.addEventListener('mousemove', (e) => onMove(e.clientX, e.clientY));
         window.addEventListener('mouseup', () => { 
-            if(isDragging) simpanDataOtomatis();
-            isDragging = false; 
-            draggedNode = null; 
+            if(dragInfo) simpanDataOtomatis();
+            dragInfo = null; 
         });
 
+        // Klik kekosongan kanvas
         canvas.addEventListener('mousedown', (e) => {
             if (e.target === canvas || e.target === garisLayer) {
-                selectedNodeId = null;
-                modeMenghubungkan = false;
-                btnHubungkan.innerText = "🔗 Hubungkan ke...";
-                btnHubungkan.style.backgroundColor = "";
+                selectedNodeId = null; selectedLineId = null;
                 renderSemua();
             }
         });
 
-        // --- FUNGSI-FUNGSI MENU/TOOLBAR ---
+        // --- 6. MENU & TOMBOL KONTROL ---
         function tambahKotak() {
-            const idBaru = 'node-' + Date.now();
-            const parentId = selectedNodeId ? selectedNodeId : null; 
-            
-            mindmapData.push({
-                id: idBaru,
-                text: 'Kotak Baru',
-                x: Math.round(300 / GRID_SIZE) * GRID_SIZE, 
-                y: Math.round(100 / GRID_SIZE) * GRID_SIZE,
-                parentId: parentId,
+            appData.nodes.push({
+                id: 'node-' + Date.now(), text: 'Kotak Baru',
+                x: Math.round(300 / GRID_SIZE) * GRID_SIZE, y: Math.round(100 / GRID_SIZE) * GRID_SIZE,
                 color: '#ffeaa7'
             });
-            pilihKotak(idBaru, '#ffeaa7'); 
-            simpanDataOtomatis();
+            simpanDataOtomatis(); renderSemua();
+        }
+
+        function tambahGarisManual() {
+            appData.lines.push({
+                id: 'line-' + Date.now(),
+                x1: 200, y1: 200, // Koordinat awal
+                x2: 400, y2: 200  // Koordinat akhir
+            });
+            simpanDataOtomatis(); renderSemua();
         }
 
         function ubahWarnaKotak() {
-            if (!selectedNodeId) return alert("Pilih kotak dulu dengan cara mengkliknya!");
-            const node = mindmapData.find(n => n.id === selectedNodeId);
-            if (node) {
-                node.color = colorPicker.value;
-                renderSemua();
-                simpanDataOtomatis();
+            if (selectedNodeId) {
+                const node = appData.nodes.find(n => n.id === selectedNodeId);
+                if (node) { node.color = colorPicker.value; simpanDataOtomatis(); renderSemua(); }
             }
         }
 
-        function putusKoneksi() {
-            if (!selectedNodeId) return alert("Pilih kotak yang garisnya mau diputus!");
-            const node = mindmapData.find(n => n.id === selectedNodeId);
-            if (node) {
-                node.parentId = null; 
-                renderSemua();
-                simpanDataOtomatis();
+        function hapusTerpilih() {
+            if (selectedNodeId) {
+                appData.nodes = appData.nodes.filter(n => n.id !== selectedNodeId);
+                selectedNodeId = null;
+            } else if (selectedLineId) {
+                appData.lines = appData.lines.filter(l => l.id !== selectedLineId);
+                selectedLineId = null;
+            } else {
+                alert("Klik kotak atau titik ujung garis terlebih dahulu sebelum menghapus.");
+                return;
             }
-        }
-
-        function mulaiHubungkan() {
-            if (!selectedNodeId) return alert("Pilih kotak awalnya dulu!");
-            modeMenghubungkan = true;
-            btnHubungkan.innerText = "Klik Kotak Induk/Tujuan...";
-            btnHubungkan.style.backgroundColor = "#ffeaa7";
+            simpanDataOtomatis(); renderSemua();
         }
 
         function simpanDataOtomatis() {
-            localStorage.setItem('mindmapDataV3', JSON.stringify(mindmapData));
+            localStorage.setItem('mindmapDataV4', JSON.stringify(appData));
         }
 
-        function hapusData() {
+        function hapusSemuaData() {
             if(confirm('Hapus semua dan mulai dari awal?')) {
-                localStorage.removeItem('mindmapDataV3');
-                mindmapData = [];
-                selectedNodeId = null;
+                localStorage.removeItem('mindmapDataV4'); localStorage.removeItem('mindmapDataV3');
+                appData = { nodes: [], lines: [] }; selectedNodeId = null; selectedLineId = null;
                 muatData();
             }
         }
 
-        // --- FUNGSI EKSPOR/IMPOR FILE ---
+        // --- 7. FUNGSI EKSPOR/IMPOR FILE ---
         function eksporKeFile() {
-            const dataString = JSON.stringify(mindmapData, null, 2); 
+            const dataString = JSON.stringify(appData, null, 2); 
             const blob = new Blob([dataString], { type: "application/json" });
             const url = URL.createObjectURL(blob);
             
             const a = document.createElement('a');
-            a.href = url;
-            a.download = "mindmap_kamu.json"; 
-            document.body.appendChild(a);
-            a.click(); 
-            document.body.removeChild(a); 
+            a.href = url; a.download = "mindmap_bebas.json"; 
+            document.body.appendChild(a); a.click(); document.body.removeChild(a); 
             URL.revokeObjectURL(url);
         }
 
@@ -286,28 +303,18 @@
             if (!file) return; 
 
             const reader = new FileReader(); 
-            
             reader.onload = function(e) {
                 try {
                     const dataBaru = JSON.parse(e.target.result);
-                    if (Array.isArray(dataBaru)) {
-                        mindmapData = dataBaru;
-                        simpanDataOtomatis(); 
-                        renderSemua(); 
-                        alert("Data berhasil dimuat!");
-                    } else {
-                        alert("Format file tidak valid!");
-                    }
-                } catch (error) {
-                    alert("Terjadi kesalahan saat membaca file JSON.");
-                }
+                    // Pastikan formatnya sesuai yang baru (memiliki nodes dan lines)
+                    if (dataBaru && Array.isArray(dataBaru.nodes)) {
+                        appData = dataBaru; simpanDataOtomatis(); renderSemua(); alert("Data berhasil dimuat!");
+                    } else { alert("Format file tidak valid!"); }
+                } catch (error) { alert("Terjadi kesalahan saat membaca file JSON."); }
             };
-            
-            reader.readAsText(file); 
-            event.target.value = ''; 
+            reader.readAsText(file); event.target.value = ''; 
         }
 
-        // Inisialisasi awal
         muatData();
     </script>
 </body>
