@@ -628,6 +628,14 @@ document.addEventListener('keydown', (e) => {
 
     // Shortcut kombinasi Ctrl (atau Cmd di Mac)
     if (e.ctrlKey || e.metaKey) {
+        
+        // --- PERBAIKAN BUG: Mencegat Ctrl+S ---
+        if (e.key.toLowerCase() === 's') {
+            e.preventDefault(); // Mencegah menu "Save Page As" dari browser
+            document.getElementById('btn-save').click(); // Jalankan fungsi save milik kita
+            return;
+        }
+
         if (e.key.toLowerCase() === 'z') {
             e.preventDefault(); // Mencegah aksi bawaan browser
             if (e.shiftKey) {
