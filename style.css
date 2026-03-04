@@ -1,0 +1,60 @@
+/* style.css */
+body {
+    user-select: none; /* Mencegah seleksi teks saat dragging */
+}
+
+/* Kotak Node */
+.node {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.375rem;
+    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+    border: 2px solid transparent;
+    transition: box-shadow 0.2s;
+    cursor: pointer;
+    z-index: 10;
+}
+.node:hover {
+    border-color: rgba(255, 255, 255, 0.5);
+}
+.node.selected {
+    border-color: white;
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+    z-index: 20;
+    box-shadow: 0 0 0 4px rgba(255,255,255,0.1);
+}
+.node.connecting {
+    box-shadow: 0 0 0 4px rgba(250, 204, 21, 1);
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Port sambungan */
+.node-port {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0.75rem;
+    height: 0.75rem;
+    background-color: #0f172a;
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    border-radius: 50%;
+}
+.node-port.left { left: -0.375rem; }
+.node-port.right { right: -0.375rem; }
+
+/* Input teks di dalam node */
+.node-input {
+    width: 90%;
+    background: transparent;
+    color: white;
+    text-align: center;
+    outline: none;
+    font-weight: 500;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .5; }
+}
