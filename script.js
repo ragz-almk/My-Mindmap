@@ -85,11 +85,19 @@ const getCanvasCoords = (clientX, clientY) => {
 };
 
 const commit = (newNodes, newEdges) => {
+    // Simpan ke history untuk Undo/Redo
     history.push({ nodes: JSON.parse(JSON.stringify(state.nodes)), edges: JSON.parse(JSON.stringify(state.edges)) });
     if (history.length > 15) history.shift();
     future = [];
+    
+    // Perbarui state
     state.nodes = newNodes;
     state.edges = newEdges;
+    
+    // --- FITUR AUTO-SAVE ---
+    // Otomatis simpan ke Local Storage setiap ada perubahan
+    localStorage.setItem('mindmap_cache', JSON.stringify({ nodes: state.nodes, edges: state.edges }));
+    
     render();
 };
 
@@ -641,7 +649,7 @@ document.addEventListener('keydown', (e) => {
         case 'v': // Mode Pilih
             document.getElementById('btn-select').click();
             break;
-        case 's': // Mode Sambung (Bisa juga pakai 'c' untuk Connect jika mau)
+        case 'c': // Mode Sambung (Bisa juga pakai 'c' untuk Connect jika mau)
             document.getElementById('btn-connect').click();
             break;
         case 'a': // Tambah Kotak
@@ -659,6 +667,12 @@ document.addEventListener('keydown', (e) => {
             document.getElementById('btn-zoom-out').click();
             break;
     }
+});
+
+// --- AUTO-SAVE SAFETY NET ---
+// Menyimpan data sepersekian detik sebelum tab ditutup atau di-refresh
+window.addEventListener('beforeunload', () => {
+    localStorage.setItem('mindmap_cache', JSON.stringify({ nodes: state.nodes, edges: state.edges }));
 });
 
 // Init Application
