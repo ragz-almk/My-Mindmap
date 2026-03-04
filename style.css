@@ -58,3 +58,32 @@ body {
     0%, 100% { opacity: 1; }
     50% { opacity: .5; }
 }
+
+/* Mengecilkan Toolbar di layar Mobile (Portrait) */
+@media (max-width: 640px) {
+    .toolbar {
+        width: 96vw !important; /* Lebar maksimal 96% layar */
+        padding: 0.35rem !important; /* Kurangi jarak dalam container */
+        gap: 0 !important; /* Hilangkan jarak antar tombol bawaan tailwind */
+        justify-content: space-evenly !important; /* Ratakan tombol */
+        bottom: 1rem !important; /* Turunkan sedikit posisinya */
+    }
+    
+    .toolbar button, 
+    .toolbar label {
+        padding: 0.4rem !important; /* Kurangi padding dalam tombol */
+        border-radius: 0.5rem !important; /* Sesuaikan kelengkungan tombol */
+    }
+    
+    .toolbar svg { 
+        /* Lucide mengubah tag <i> menjadi <svg>, jadi kita kecilkan svg-nya */
+        width: 1.25rem !important; /* Ukuran icon sekitar 20px */
+        height: 1.25rem !important;
+    }
+    
+    .toolbar .w-px {
+        height: 1.5rem !important; /* Pendekkan garis pemisah */
+        margin: 0 0.1rem !important; /* Rapatkan garis pemisah */
+    }
+}
+
