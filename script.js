@@ -404,31 +404,90 @@ container.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 // Pinch for Mobile Zoom
+// --- NEW FEATURES: ZOOMING ---
+
+// Scroll for PC Zoom (Zoom to Cursor)
+// ... (Biarkan bagian event 'wheel' PC tidak diubah) ...
+
+// --- MOBILE TOUCH (PAN & ZOOM 2 JARI) ---
+let initialPinchCenter = null; // Variabel baru untuk menyimpan titik tengah 2 jari
+
 container.addEventListener('touchstart', (e) => {
     if (e.touches.length === 2) {
-        isDraggingViewport = false; 
-        initialPinchDist = Math.hypot(
-            e.touches[0].clientX - e.touches[1].clientX,
-            e.touches[0].clientY - e.touches[1].clientY
-        );
+        e.preventDefault(); // Mencegah layar browser ikut ter-scroll
+        
+        // Batalkan mode seleksi kotak (marquee) jika user pakai 2 jari
+        isSelecting = false; 
+        selectionBoxEl.style.display = 'none';
+
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        
+        // Simpan jarak awal dan titik tengah awal
+        initialPinchDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+        initialPinchCenter = {
+            x: (t1.clientX + t2.clientX) / 2,
+            y: (t1.clientY + t2.clientY) / 2
+        };
     }
 }, { passive: false });
 
 container.addEventListener('touchmove', (e) => {
-    if (e.touches.length === 2 && initialPinchDist) {
+    if (e.touches.length === 2 && initialPinchDist && initialPinchCenter) {
         e.preventDefault();
-        const dist = Math.hypot(
-            e.touches[0].clientX - e.touches[1].clientX,
-            e.touches[0].clientY - e.touches[1].clientY
-        );
-        const scaleChange = dist / initialPinchDist;
-        state.zoom = Math.max(0.3, Math.min(2.5, state.zoom * scaleChange));
-        initialPinchDist = dist; 
+        
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+
+        // 1. Hitung jarak dan titik tengah yang BARU
+        const newDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+        const newCenter = {
+            x: (t1.clientX + t2.clientX) / 2,
+            y: (t1.clientY + t2.clientY) / 2
+        };
+
+        // 2. Lakukan Geser (Pan) berdasarkan pergerakan titik tengah jari
+        const deltaX = newCenter.x - initialPinchCenter.x;
+        const deltaY = newCenter.y - initialPinchCenter.y;
+        state.pan.x += deltaX;
+        state.pan.y += deltaY;
+
+        // 3. Lakukan Zoom (Terpusat di titik tengah jari)
+        const scaleChange = newDist / initialPinchDist;
+        const oldZoom = state.zoom;
+        const newZoom = Math.max(0.3, Math.min(2.5, state.zoom * scaleChange));
+        
+        if (newZoom !== oldZoom) {
+            const rect = container.getBoundingClientRect();
+            const cursorX = newCenter.x - rect.left;
+            const cursorY = newCenter.y - rect.top;
+            
+            // Hitung posisi kanvas sebelum zoom
+            const canvasX = (cursorX - state.pan.x) / oldZoom;
+            const canvasY = (cursorY - state.pan.y) / oldZoom;
+
+            state.zoom = newZoom;
+
+            // Sesuaikan geseran agar zoom tidak melompat
+            state.pan.x = cursorX - (canvasX * state.zoom);
+            state.pan.y = cursorY - (canvasY * state.zoom);
+        }
+
+        // 4. Update data untuk gerakan (frame) selanjutnya
+        initialPinchDist = newDist;
+        initialPinchCenter = newCenter;
+        
         render();
     }
 }, { passive: false });
 
-container.addEventListener('touchend', () => { initialPinchDist = null; });
+container.addEventListener('touchend', (e) => { 
+    // Jika jari yang menempel kurang dari 2, hentikan proses pan/zoom
+    if (e.touches.length < 2) {
+        initialPinchDist = null; 
+        initialPinchCenter = null;
+    }
+});
 
 // --- BUTTON LISTENERS ---
 document.getElementById('btn-add').onclick = () => {
