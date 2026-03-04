@@ -94,14 +94,24 @@ function render() {
         div.style.transform = `translate(${node.x}px, ${node.y}px)`;
         div.style.backgroundColor = node.color;
         
-        // Node Content
+       // Node Content
         if (state.selectedNodeId === node.id && state.activeTool === 'select') {
             const input = document.createElement('input');
             input.type = 'text';
             input.className = 'node-input';
             input.value = node.text;
             input.onpointerdown = e => e.stopPropagation();
-            input.oninput = e => { node.text = e.target.value; }; // Direct update, no commit
+            
+            // Mengupdate state secara langsung saat mengetik
+            input.oninput = e => { node.text = e.target.value; }; 
+            
+            // --- FITUR BARU: Deteksi tombol Enter ---
+            input.onkeydown = e => {
+                if (e.key === 'Enter') {
+                    input.blur(); // Memicu onblur untuk menyimpan (commit)
+                }
+            };
+
             input.onblur = () => commit(state.nodes, state.edges);
             div.appendChild(input);
             setTimeout(() => input.focus(), 10);
@@ -112,8 +122,9 @@ function render() {
             div.appendChild(span);
         }
 
-        // Ports
-        div.innerHTML += `<div class="node-port left"></div><div class="node-port right"></div>`;
+        // --- PERBAIKAN BUG ---
+        // Gunakan insertAdjacentHTML alih-alih innerHTML += agar event listener tidak hilang
+        div.insertAdjacentHTML('beforeend', `<div class="node-port left"></div><div class="node-port right"></div>`);
         
         // Node Interaction
         div.onpointerdown = (e) => handleNodePointerDown(e, node);
