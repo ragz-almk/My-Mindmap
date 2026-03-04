@@ -629,25 +629,25 @@ document.addEventListener('keydown', (e) => {
     // Shortcut kombinasi Ctrl (atau Cmd di Mac)
     if (e.ctrlKey || e.metaKey) {
         
-        // --- PERBAIKAN BUG: Mencegat Ctrl+S ---
+        // --- PERUBAHAN: Ctrl+S sekarang memicu Export JSON ---
         if (e.key.toLowerCase() === 's') {
             e.preventDefault(); // Mencegah menu "Save Page As" dari browser
-            document.getElementById('btn-save').click(); // Jalankan fungsi save milik kita
+            document.getElementById('btn-export').click(); // <--- Ganti di sini
             return;
         }
 
         if (e.key.toLowerCase() === 'z') {
-            e.preventDefault(); // Mencegah aksi bawaan browser
+            e.preventDefault(); 
             if (e.shiftKey) {
-                document.getElementById('btn-redo').click(); // Ctrl + Shift + Z (Redo)
+                document.getElementById('btn-redo').click(); 
             } else {
-                document.getElementById('btn-undo').click(); // Ctrl + Z (Undo)
+                document.getElementById('btn-undo').click(); 
             }
             return;
         }
         if (e.key.toLowerCase() === 'y') {
             e.preventDefault();
-            document.getElementById('btn-redo').click(); // Ctrl + Y (Redo)
+            document.getElementById('btn-redo').click(); 
             return;
         }
     }
