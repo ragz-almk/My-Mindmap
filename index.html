@@ -63,6 +63,10 @@
         <span style="border-left: 2px solid #ccc; height: 20px; margin: 0 5px;"></span>
         <button onclick="simpanData()">💾 Simpan</button>
         <button onclick="hapusData()" style="color: red;">🗑️ Hapus Semua</button>
+        <span style="border-left: 2px solid #ccc; height: 20px; margin: 0 5px;"></span>
+        <button onclick="eksporKeFile()">⬇️ Export File (.json)</button>
+        <button onclick="document.getElementById('fileUpload').click()">⬆️ Load File</button>
+        <input type="file" id="fileUpload" style="display: none;" onchange="imporDariFile(event)" accept=".json">
     </div>
 
     <div id="canvas">
@@ -287,4 +291,5 @@
         muatData();
     </script>
 </body>
+
 </html>
