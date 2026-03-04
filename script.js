@@ -613,6 +613,54 @@ if ('serviceWorker' in navigator) {
         .catch(err => console.error('SW Registration Failed', err));
 }
 
+// --- KEYBOARD SHORTCUTS ---
+document.addEventListener('keydown', (e) => {
+    // Abaikan shortcut jika user sedang mengetik teks di dalam kotak
+    if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+
+    // Shortcut kombinasi Ctrl (atau Cmd di Mac)
+    if (e.ctrlKey || e.metaKey) {
+        if (e.key.toLowerCase() === 'z') {
+            e.preventDefault(); // Mencegah aksi bawaan browser
+            if (e.shiftKey) {
+                document.getElementById('btn-redo').click(); // Ctrl + Shift + Z (Redo)
+            } else {
+                document.getElementById('btn-undo').click(); // Ctrl + Z (Undo)
+            }
+            return;
+        }
+        if (e.key.toLowerCase() === 'y') {
+            e.preventDefault();
+            document.getElementById('btn-redo').click(); // Ctrl + Y (Redo)
+            return;
+        }
+    }
+
+    // Shortcut satu huruf
+    switch (e.key.toLowerCase()) {
+        case 'v': // Mode Pilih
+            document.getElementById('btn-select').click();
+            break;
+        case 's': // Mode Sambung (Bisa juga pakai 'c' untuk Connect jika mau)
+            document.getElementById('btn-connect').click();
+            break;
+        case 'a': // Tambah Kotak
+            document.getElementById('btn-add').click();
+            break;
+        case 'delete': // Hapus Kotak
+        case 'backspace':
+            document.getElementById('btn-delete').click();
+            break;
+        case '+': // Zoom In (kadang di keyboard tombol + itu sama dengan =)
+        case '=':
+            document.getElementById('btn-zoom-in').click();
+            break;
+        case '-': // Zoom Out
+            document.getElementById('btn-zoom-out').click();
+            break;
+    }
+});
+
 // Init Application
 loadCache();
 render();
