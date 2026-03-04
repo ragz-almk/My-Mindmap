@@ -223,6 +223,37 @@ container.addEventListener('wheel', (e) => {
     render();
 }, { passive: false });
 
+// Scroll for PC Zoom (Zoom to Cursor)
+container.addEventListener('wheel', (e) => {
+    if (e.target.closest('.toolbar') || e.target.closest('#node-toolbar')) return;
+    e.preventDefault();
+
+    // 1. Tentukan nilai zoom yang baru
+    const zoomDelta = e.deltaY > 0 ? -0.1 : 0.1;
+    const newZoom = Math.max(0.3, Math.min(2.5, state.zoom + zoomDelta));
+
+    // Jika nilai zoom sudah mentok di batas maksimal/minimal, hentikan fungsi
+    if (newZoom === state.zoom) return;
+
+    // 2. Dapatkan posisi kursor mouse relatif terhadap container
+    const rect = container.getBoundingClientRect();
+    const cursorX = e.clientX - rect.left;
+    const cursorY = e.clientY - rect.top;
+
+    // 3. Hitung koordinat kanvas aktual di bawah kursor (sebelum zoom)
+    const canvasX = (cursorX - state.pan.x) / state.zoom;
+    const canvasY = (cursorY - state.pan.y) / state.zoom;
+
+    // 4. Terapkan nilai zoom yang baru
+    state.zoom = newZoom;
+
+    // 5. Sesuaikan ulang posisi pan (geser) agar kursor tetap menunjuk titik kanvas yang sama
+    state.pan.x = cursorX - (canvasX * state.zoom);
+    state.pan.y = cursorY - (canvasY * state.zoom);
+
+    render();
+}, { passive: false });
+
 // Pinch for Mobile Zoom
 container.addEventListener('touchstart', (e) => {
     if (e.touches.length === 2) {
