@@ -9,7 +9,7 @@ let state = {
     zoom: 1,
     pan: { x: 0, y: 0 },
     activeTool: 'select', 
-    selectedNodeIds: [], // <-- BERUBAH: Sekarang menggunakan array untuk multi-select
+    selectedNodeIds: [], // Sekarang menggunakan array untuk multi-select
     connectSourceId: null
 };
 
@@ -41,27 +41,6 @@ document.body.appendChild(selectionBoxEl);
 
 // Mencegah menu klik kanan muncul agar tidak mengganggu
 container.addEventListener('contextmenu', e => e.preventDefault());
-
-// Initialize Icons
-lucide.createIcons();
-
-let history = [];
-let future = [];
-
-// Interaction Refs
-let isDraggingViewport = false;
-let isDraggingNode = false;
-let dragStart = { x: 0, y: 0, panX: 0, panY: 0, nodeX: 0, nodeY: 0, offsetX: 0, offsetY: 0 };
-let initialPinchDist = null; // Untuk Pinch to Zoom
-
-// DOM Elements
-const container = document.getElementById('app-container');
-const canvasLayer = document.getElementById('canvas-layer');
-const bgGrid = document.getElementById('bg-grid');
-const edgesLayer = document.getElementById('edges-layer');
-const nodesLayer = document.getElementById('nodes-layer');
-const connectMessage = document.getElementById('connect-message');
-const nodeToolbar = document.getElementById('node-toolbar');
 
 // Initialize Icons
 lucide.createIcons();
@@ -234,9 +213,6 @@ function render() {
 
     // Tampilkan toolbar hanya jika ada kotak yang dipilih
     nodeToolbar.classList.toggle('hidden', !(state.selectedNodeIds.length > 0 && state.activeTool === 'select'));
-    }
-
-    nodeToolbar.classList.toggle('hidden', !(state.selectedNodeId && state.activeTool === 'select'));
     document.getElementById('btn-undo').disabled = history.length === 0;
     document.getElementById('btn-redo').disabled = future.length === 0;
     
@@ -397,16 +373,6 @@ container.addEventListener('pointerup', endDrag);
 container.addEventListener('pointerleave', endDrag);
 
 // --- NEW FEATURES: ZOOMING ---
-
-// Scroll for PC Zoom
-container.addEventListener('wheel', (e) => {
-    if (e.target.closest('.toolbar') || e.target.closest('#node-toolbar')) return;
-    e.preventDefault();
-    const zoomDelta = e.deltaY > 0 ? -0.1 : 0.1;
-    state.zoom = Math.max(0.3, Math.min(2.5, state.zoom + zoomDelta));
-    render();
-}, { passive: false });
-
 // Scroll for PC Zoom (Zoom to Cursor)
 container.addEventListener('wheel', (e) => {
     if (e.target.closest('.toolbar') || e.target.closest('#node-toolbar')) return;
@@ -416,22 +382,21 @@ container.addEventListener('wheel', (e) => {
     const zoomDelta = e.deltaY > 0 ? -0.1 : 0.1;
     const newZoom = Math.max(0.3, Math.min(2.5, state.zoom + zoomDelta));
 
-    // Jika nilai zoom sudah mentok di batas maksimal/minimal, hentikan fungsi
     if (newZoom === state.zoom) return;
 
-    // 2. Dapatkan posisi kursor mouse relatif terhadap container
+    // 2. Dapatkan posisi kursor mouse
     const rect = container.getBoundingClientRect();
     const cursorX = e.clientX - rect.left;
     const cursorY = e.clientY - rect.top;
 
-    // 3. Hitung koordinat kanvas aktual di bawah kursor (sebelum zoom)
+    // 3. Hitung koordinat kanvas aktual
     const canvasX = (cursorX - state.pan.x) / state.zoom;
     const canvasY = (cursorY - state.pan.y) / state.zoom;
 
-    // 4. Terapkan nilai zoom yang baru
+    // 4. Terapkan nilai zoom
     state.zoom = newZoom;
 
-    // 5. Sesuaikan ulang posisi pan (geser) agar kursor tetap menunjuk titik kanvas yang sama
+    // 5. Sesuaikan pan
     state.pan.x = cursorX - (canvasX * state.zoom);
     state.pan.y = cursorY - (canvasY * state.zoom);
 
@@ -441,7 +406,7 @@ container.addEventListener('wheel', (e) => {
 // Pinch for Mobile Zoom
 container.addEventListener('touchstart', (e) => {
     if (e.touches.length === 2) {
-        isDraggingViewport = false; // Batalkan pan jika mulai pinch
+        isDraggingViewport = false; 
         initialPinchDist = Math.hypot(
             e.touches[0].clientX - e.touches[1].clientX,
             e.touches[0].clientY - e.touches[1].clientY
@@ -458,7 +423,7 @@ container.addEventListener('touchmove', (e) => {
         );
         const scaleChange = dist / initialPinchDist;
         state.zoom = Math.max(0.3, Math.min(2.5, state.zoom * scaleChange));
-        initialPinchDist = dist; // update untuk gerakan kontinyu
+        initialPinchDist = dist; 
         render();
     }
 }, { passive: false });
@@ -518,7 +483,7 @@ document.getElementById('btn-delete').onclick = () => {
 
 // Setup Color Picker
 const colorContainer = document.getElementById('color-picker');
-colorContainer.innerHTML = ''; // Pastikan div bersih sebelum merender warna
+colorContainer.innerHTML = ''; 
 COLORS.forEach(color => {
     const btn = document.createElement('button');
     btn.className = 'w-6 h-6 rounded-full border-2 border-transparent hover:border-white transition-all focus:outline-none';
