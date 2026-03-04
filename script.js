@@ -317,8 +317,8 @@ document.getElementById('btn-add').onclick = () => {
     const viewportCenterY = -state.pan.y / state.zoom + window.innerHeight / (2 * state.zoom);
     const newNode = {
         id: Date.now().toString(),
-        x: snapToGrid(viewportCenterX - NODE_WIDTH / 2),
-        y: snapToGrid(viewportCenterY - NODE_HEIGHT / 2),
+        x: snapToGrid(viewportCenterX - 120 / 2),
+        y: snapToGrid(viewportCenterY - 60 / 2),
         text: 'Kotak Baru',
         color: COLORS[0]
     };
